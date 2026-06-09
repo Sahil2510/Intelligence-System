@@ -1,5 +1,13 @@
-from pathlib import Path
+class LiveClient:
 
+    async def connect(self):
+        pass
 
-def save_audio_file(audio_bytes: bytes, path: str):
-    Path(path).write_bytes(audio_bytes)
+    async def send_audio(self, audio_bytes: bytes):
+        pass
+
+    async def receive_audio(self):
+        pass
+
+    async def close(self):
+        pass
