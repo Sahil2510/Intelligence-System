@@ -3,4 +3,4 @@ import os
 
 load_dotenv()
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_API_KEY = "AIzaSyBXbu8WrEfmo7c82HGYKD6NRIt_nJvRaKM"
