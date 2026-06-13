@@ -1,0 +1,1459 @@
+from contextlib import contextmanager
+
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi.responses import HTMLResponse
+from pydantic import BaseModel
+
+from app.orchestrator.intelligence import IntelligenceOrchestrator
+from app.utils.pipeline_log import (
+    PipelineLogger,
+    reset_pipeline_logger,
+    set_pipeline_logger,
+)
+
+
+app = FastAPI()
+orchestrator = IntelligenceOrchestrator()
+
+
+class TranscriptRequest(BaseModel):
+    transcript: str
+    intent: str | None = None
+    chat_id: str | None = None
+
+
+class CreateChatRequest(BaseModel):
+    title: str = "New chat"
+
+
+class TtsRequest(BaseModel):
+    text: str
+    transcript: str = ""
+
+
+class ProfileRequest(BaseModel):
+    name: str = ""
+    age: str = ""
+    dob: str = ""
+    height: str = ""
+    weight: str = ""
+
+
+@contextmanager
+def pipeline_session():
+    pipeline_logger = PipelineLogger()
+    token = set_pipeline_logger(pipeline_logger)
+    try:
+        yield pipeline_logger
+    finally:
+        reset_pipeline_logger(token)
+
+
+@app.get("/", response_class=HTMLResponse)
+def home():
+    return PLAYGROUND_HTML
+
+
+PLAYGROUND_HTML = """
+<!doctype html>
+<html>
+<head>
+  <title>Luvio Playground</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f7f8;
+      --panel: #ffffff;
+      --text: #202123;
+      --muted: #6b7280;
+      --border: #d9d9e3;
+      --user: #202123;
+      --assistant: #ffffff;
+      --accent: #10a37f;
+      --accent-strong: #0d8f6f;
+      --log-bg: #111827;
+      --log-text: #e5e7eb;
+      --sidebar: #f0f0f5;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      height: 100%;
+      overflow: hidden;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    .app {
+      display: grid;
+      grid-template-columns: 260px 1fr 0;
+      height: 100vh;
+      overflow: hidden;
+      transition: grid-template-columns 0.25s ease;
+    }
+
+    .app.logs-open {
+      grid-template-columns: 260px 1fr 380px;
+    }
+
+    .chats-panel {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+      background: var(--sidebar);
+      border-right: 1px solid var(--border);
+    }
+
+    .chats-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 14px 12px;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel);
+    }
+
+    .chats-header h2 {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 650;
+    }
+
+    .chats-list {
+      flex: 1;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      padding: 8px;
+    }
+
+    .chat-item {
+      width: 100%;
+      text-align: left;
+      padding: 10px 12px;
+      margin-bottom: 4px;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--text);
+      font: inherit;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .chat-item:hover { background: #e8e8ee; }
+    .chat-item.active {
+      background: #fff;
+      border-color: var(--border);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+    }
+
+    .chat-item-row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      margin-bottom: 4px;
+    }
+
+    .chat-item-row .chat-item {
+      flex: 1;
+      margin-bottom: 0;
+    }
+
+    .chat-delete {
+      min-width: 32px;
+      min-height: 32px;
+      padding: 0;
+      background: transparent;
+      color: #9ca3af;
+      font-size: 16px;
+      line-height: 1;
+    }
+
+    .chat-delete:hover {
+      background: #fee2e2;
+      color: #b42318;
+    }
+
+    .profile-wrap {
+      position: relative;
+    }
+
+    .profile-button {
+      width: 38px;
+      min-width: 38px;
+      height: 38px;
+      min-height: 38px;
+      padding: 0;
+      border-radius: 999px;
+      background: #202123;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .profile-menu {
+      display: none;
+      position: absolute;
+      top: calc(100% + 8px);
+      right: 0;
+      min-width: 180px;
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+      overflow: hidden;
+      z-index: 20;
+    }
+
+    .profile-menu.open { display: block; }
+
+    .profile-menu button {
+      width: 100%;
+      min-height: 40px;
+      border-radius: 0;
+      background: #fff;
+      color: var(--text);
+      text-align: left;
+      padding: 0 14px;
+      font-weight: 500;
+    }
+
+    .profile-menu button:hover { background: #f3f4f6; }
+
+    .modal-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.35);
+      z-index: 30;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+
+    .modal-backdrop.open { display: flex; }
+
+    .modal {
+      width: min(420px, 100%);
+      background: #fff;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.18);
+      padding: 20px;
+    }
+
+    .modal h3 {
+      margin: 0 0 16px;
+      font-size: 18px;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+
+    .field label {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .field input {
+      min-height: 40px;
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font: inherit;
+    }
+
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .shell {
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      height: 100vh;
+      overflow: hidden;
+      min-width: 0;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 14px 20px;
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 17px;
+      font-weight: 650;
+    }
+
+    .status {
+      min-height: 20px;
+      color: var(--muted);
+      font-size: 13px;
+      text-align: right;
+    }
+
+    .chat-wrap {
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      min-height: 0;
+    }
+
+    .chat {
+      width: min(920px, 100%);
+      margin: 0 auto;
+      padding: 24px 16px 32px;
+    }
+
+    .empty {
+      display: grid;
+      place-items: center;
+      min-height: 52vh;
+      color: var(--muted);
+      text-align: center;
+      line-height: 1.5;
+    }
+
+    .message {
+      display: flex;
+      margin: 18px 0;
+    }
+
+    .message.user { justify-content: flex-end; }
+
+    .bubble {
+      max-width: min(680px, 86vw);
+      padding: 13px 15px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .user .bubble {
+      background: var(--user);
+      color: #fff;
+      border-color: var(--user);
+    }
+
+    .assistant .bubble { background: var(--assistant); }
+
+    .composer-wrap {
+      padding: 16px;
+      background: linear-gradient(180deg, rgba(247, 247, 248, 0), var(--bg) 35%);
+      border-top: 1px solid var(--border);
+    }
+
+    .composer {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      width: min(920px, 100%);
+      margin: 0 auto;
+      padding: 10px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+    }
+
+    .composer-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .text-input {
+      flex: 1;
+      min-height: 42px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font: inherit;
+      font-size: 14px;
+      resize: none;
+    }
+
+    .text-input:focus {
+      outline: 2px solid rgba(16, 163, 127, 0.25);
+      border-color: var(--accent);
+    }
+
+    .hint {
+      flex: 1;
+      color: var(--muted);
+      font-size: 14px;
+      padding-left: 4px;
+    }
+
+    button {
+      min-width: 42px;
+      min-height: 42px;
+      border: 0;
+      border-radius: 8px;
+      background: var(--accent);
+      color: white;
+      font: inherit;
+      font-weight: 650;
+      cursor: pointer;
+    }
+
+    button:hover { background: var(--accent-strong); }
+    button:disabled { cursor: not-allowed; background: #c7c7d1; }
+
+    .secondary {
+      width: auto;
+      padding: 0 13px;
+      background: #ececf1;
+      color: var(--text);
+    }
+
+    .secondary:hover { background: #e2e2e8; }
+    .secondary.active { background: #dbeafe; color: #1d4ed8; }
+
+    .recording { color: #b42318; }
+
+    .logs-panel {
+      border-left: 1px solid var(--border);
+      background: var(--log-bg);
+      color: var(--log-text);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    .logs-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 16px;
+      border-bottom: 1px solid #374151;
+      flex-shrink: 0;
+    }
+
+    .logs-header h2 {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 650;
+    }
+
+    .logs-body {
+      flex: 1;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      min-height: 0;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .logs-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 12px;
+    }
+
+    .log-empty {
+      color: #9ca3af;
+      font-size: 13px;
+      line-height: 1.5;
+      padding: 12px;
+    }
+
+    .log-entry {
+      border: 1px solid #374151;
+      border-radius: 8px;
+      padding: 10px 12px;
+      background: #1f2937;
+      animation: fadeIn 0.2s ease;
+      flex-shrink: 0;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .log-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+
+    .log-step {
+      font-size: 12px;
+      font-weight: 650;
+      color: #93c5fd;
+    }
+
+    .log-status {
+      font-size: 11px;
+      font-weight: 650;
+      text-transform: uppercase;
+      padding: 2px 8px;
+      border-radius: 999px;
+    }
+
+    .log-status.started { background: #78350f; color: #fde68a; }
+    .log-status.completed { background: #064e3b; color: #6ee7b7; }
+    .log-status.error { background: #7f1d1d; color: #fecaca; }
+
+    .log-message {
+      font-size: 13px;
+      line-height: 1.45;
+      margin-bottom: 6px;
+    }
+
+    .log-time {
+      font-size: 11px;
+      color: #9ca3af;
+    }
+
+    .log-details {
+      margin-top: 8px;
+      padding: 8px;
+      border-radius: 6px;
+      background: #111827;
+      font-size: 11px;
+      line-height: 1.4;
+      color: #d1d5db;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+  </style>
+</head>
+<body>
+  <div class="app" id="app">
+    <aside class="chats-panel">
+      <div class="chats-header">
+        <h2>Chats</h2>
+        <button class="secondary" id="newChat">New</button>
+      </div>
+      <div class="chats-list" id="chatsList"></div>
+    </aside>
+
+    <div class="shell">
+      <header>
+        <h1>Luvio Playground</h1>
+        <div class="header-actions">
+          <button class="secondary" id="logsToggle">Logs</button>
+          <div class="status" id="status">Ready</div>
+          <div class="profile-wrap">
+            <button class="profile-button" id="profileButton">G</button>
+            <div class="profile-menu" id="profileMenu">
+              <button id="openPersonalisation">Personalisation</button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main class="chat-wrap" id="chatWrap">
+        <div class="chat" id="chat">
+          <div class="empty" id="empty">
+            <div>
+              <strong>Ask Luvio with voice or text.</strong><br>
+              Type a message or record audio, then send it through the pipeline.
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <div class="composer-wrap">
+        <div class="composer">
+          <textarea
+            class="text-input"
+            id="textInput"
+            rows="1"
+            placeholder="Type your message..."
+          ></textarea>
+          <div class="composer-row">
+            <div class="hint" id="hint">Type and press Send, or use Start / Stop for voice.</div>
+            <button class="secondary" id="sendText">Send</button>
+            <button class="secondary" id="start">Start</button>
+            <button id="stop" disabled>Stop</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <aside class="logs-panel" id="logsPanel">
+      <div class="logs-header">
+        <h2>Pipeline Logs</h2>
+        <button class="secondary" id="clearLogs">Clear</button>
+      </div>
+      <div class="logs-body" id="logsBody">
+        <div class="log-empty" id="logsEmpty">
+          Open logs and send a query to watch each pipeline step appear here.
+        </div>
+        <div class="logs-list" id="logsList"></div>
+      </div>
+    </aside>
+  </div>
+
+  <div class="modal-backdrop" id="profileModal">
+    <div class="modal">
+      <h3>Personalisation</h3>
+      <div class="field">
+        <label for="profileName">Name</label>
+        <input id="profileName" type="text" placeholder="Your name">
+      </div>
+      <div class="field">
+        <label for="profileAge">Age</label>
+        <input id="profileAge" type="text" placeholder="Your age">
+      </div>
+      <div class="field">
+        <label for="profileDob">Date of birth</label>
+        <input id="profileDob" type="date">
+      </div>
+      <div class="field">
+        <label for="profileHeight">Height</label>
+        <input id="profileHeight" type="text" placeholder="e.g. 5 ft 8 in">
+      </div>
+      <div class="field">
+        <label for="profileWeight">Weight</label>
+        <input id="profileWeight" type="text" placeholder="e.g. 70 kg">
+      </div>
+      <div class="modal-actions">
+        <button class="secondary" id="closePersonalisation">Cancel</button>
+        <button id="savePersonalisation">Save</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+let recorder;
+let chunks = [];
+let mediaStream = null;
+let activeHoldingBubble = null;
+let activeAudio = null;
+let abortController = null;
+let isProcessing = false;
+let activeChatId = null;
+let logsPinnedToBottom = true;
+
+const app = document.getElementById("app");
+const start = document.getElementById("start");
+const stop = document.getElementById("stop");
+const sendText = document.getElementById("sendText");
+const textInput = document.getElementById("textInput");
+const chatWrap = document.getElementById("chatWrap");
+const chat = document.getElementById("chat");
+const empty = document.getElementById("empty");
+const status = document.getElementById("status");
+const hint = document.getElementById("hint");
+const logsToggle = document.getElementById("logsToggle");
+const logsBody = document.getElementById("logsBody");
+const logsList = document.getElementById("logsList");
+const logsEmpty = document.getElementById("logsEmpty");
+const clearLogs = document.getElementById("clearLogs");
+const chatsList = document.getElementById("chatsList");
+const newChat = document.getElementById("newChat");
+const profileButton = document.getElementById("profileButton");
+const profileMenu = document.getElementById("profileMenu");
+const openPersonalisation = document.getElementById("openPersonalisation");
+const profileModal = document.getElementById("profileModal");
+const closePersonalisation = document.getElementById("closePersonalisation");
+const savePersonalisation = document.getElementById("savePersonalisation");
+const profileName = document.getElementById("profileName");
+const profileAge = document.getElementById("profileAge");
+const profileDob = document.getElementById("profileDob");
+const profileHeight = document.getElementById("profileHeight");
+const profileWeight = document.getElementById("profileWeight");
+
+logsBody.addEventListener("scroll", () => {
+  const distanceFromBottom = logsBody.scrollHeight - logsBody.scrollTop - logsBody.clientHeight;
+  logsPinnedToBottom = distanceFromBottom < 40;
+});
+
+function scrollChatToBottom() {
+  chatWrap.scrollTop = chatWrap.scrollHeight;
+}
+
+function scrollLogsToBottom(force = false) {
+  if (force || logsPinnedToBottom) {
+    logsBody.scrollTop = logsBody.scrollHeight;
+  }
+}
+
+function stopActiveAudio() {
+  if (activeAudio) {
+    activeAudio.pause();
+    activeAudio.currentTime = 0;
+    activeAudio.src = "";
+    activeAudio = null;
+  }
+}
+
+function abortInFlightRequests() {
+  if (abortController) {
+    abortController.abort();
+    abortController = null;
+  }
+}
+
+function setComposerBusy(busy) {
+  isProcessing = busy;
+  sendText.disabled = busy;
+  textInput.disabled = busy;
+  start.disabled = busy && recorder && recorder.state === "recording" ? false : busy;
+  stop.disabled = !recorder || recorder.state !== "recording";
+}
+
+function clearChatMessages() {
+  chat.querySelectorAll(".message").forEach(node => node.remove());
+  empty.style.display = "grid";
+}
+
+function renderChatMessages(messages) {
+  clearChatMessages();
+
+  if (!messages || !messages.length) {
+    return;
+  }
+
+  empty.style.display = "none";
+
+  messages.forEach(message => {
+    addMessage(message.role, message.text, false);
+  });
+
+  scrollChatToBottom();
+}
+
+function addMessage(role, text, shouldScroll = true) {
+  empty.style.display = "none";
+
+  const row = document.createElement("div");
+  row.className = `message ${role}`;
+
+  const bubble = document.createElement("div");
+  bubble.className = "bubble";
+  bubble.innerText = text;
+
+  row.appendChild(bubble);
+  chat.appendChild(row);
+
+  if (shouldScroll) {
+    scrollChatToBottom();
+  }
+
+  return bubble;
+}
+
+function appendLogs(logs) {
+  if (!logs || !logs.length) return;
+
+  logsEmpty.style.display = "none";
+
+  logs.forEach(entry => {
+    const row = document.createElement("div");
+    row.className = "log-entry";
+
+    const top = document.createElement("div");
+    top.className = "log-top";
+
+    const step = document.createElement("div");
+    step.className = "log-step";
+    step.innerText = entry.step;
+
+    const badge = document.createElement("div");
+    badge.className = `log-status ${entry.status}`;
+    badge.innerText = entry.status;
+
+    top.appendChild(step);
+    top.appendChild(badge);
+
+    const message = document.createElement("div");
+    message.className = "log-message";
+    message.innerText = entry.message;
+
+    const time = document.createElement("div");
+    time.className = "log-time";
+    time.innerText = entry.timestamp;
+
+    row.appendChild(top);
+    row.appendChild(message);
+    row.appendChild(time);
+
+    if (entry.details && Object.keys(entry.details).length) {
+      const details = document.createElement("pre");
+      details.className = "log-details";
+      details.innerText = JSON.stringify(entry.details, null, 2);
+      row.appendChild(details);
+    }
+
+    logsList.appendChild(row);
+  });
+
+  scrollLogsToBottom();
+}
+
+function clearPipelineLogs() {
+  logsList.innerHTML = "";
+  logsEmpty.style.display = "block";
+  logsBody.scrollTop = 0;
+  logsPinnedToBottom = true;
+}
+
+async function playGeminiAudio(data) {
+  if (!data.audio_base64) return;
+
+  stopActiveAudio();
+
+  activeAudio = new Audio(
+    `data:${data.mime_type || "audio/wav"};base64,${data.audio_base64}`
+  );
+
+  await activeAudio.play();
+}
+
+async function ensureActiveChat() {
+  if (activeChatId) {
+    return activeChatId;
+  }
+
+  const result = await fetch("/api/chats", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title: "New chat" })
+  });
+
+  const chatData = await result.json();
+  activeChatId = chatData.id;
+  await loadChats();
+  return activeChatId;
+}
+
+async function loadChats() {
+  const result = await fetch("/api/chats");
+  const chats = await result.json();
+
+  chatsList.innerHTML = "";
+
+  chats.forEach(item => {
+    const row = document.createElement("div");
+    row.className = "chat-item-row";
+
+    const button = document.createElement("button");
+    button.className = "chat-item";
+    button.dataset.chatId = item.id;
+    button.title = item.title;
+    button.innerText = item.title || "New chat";
+
+    if (item.id === activeChatId) {
+      button.classList.add("active");
+    }
+
+    button.onclick = () => selectChat(item.id);
+
+    const deleteButton = document.createElement("button");
+    deleteButton.className = "chat-delete secondary";
+    deleteButton.innerText = "×";
+    deleteButton.title = "Delete chat";
+    deleteButton.onclick = async event => {
+      event.stopPropagation();
+      await deleteChat(item.id);
+    };
+
+    row.appendChild(button);
+    row.appendChild(deleteButton);
+    chatsList.appendChild(row);
+  });
+}
+
+async function deleteChat(chatId) {
+  const confirmed = window.confirm("Delete this chat?");
+  if (!confirmed) return;
+
+  await fetch(`/api/chats/${chatId}`, { method: "DELETE" });
+
+  if (activeChatId === chatId) {
+    activeChatId = null;
+    clearChatMessages();
+  }
+
+  await loadChats();
+
+  if (!activeChatId) {
+    const result = await fetch("/api/chats");
+    const chats = await result.json();
+
+    if (chats.length) {
+      await selectChat(chats[0].id);
+    } else {
+      await createNewChat();
+    }
+  }
+}
+
+async function loadProfile() {
+  const result = await fetch("/api/profile");
+  const profile = await result.json();
+
+  profileButton.innerText = profile.initials || "G";
+  profileName.value = profile.name || "";
+  profileAge.value = profile.age || "";
+  profileDob.value = profile.dob || "";
+  profileHeight.value = profile.height || "";
+  profileWeight.value = profile.weight || "";
+}
+
+async function saveProfile() {
+  const result = await fetch("/api/profile", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: profileName.value.trim(),
+      age: profileAge.value.trim(),
+      dob: profileDob.value,
+      height: profileHeight.value.trim(),
+      weight: profileWeight.value.trim()
+    })
+  });
+
+  const profile = await result.json();
+  profileButton.innerText = profile.initials || "G";
+  profileModal.classList.remove("open");
+  profileMenu.classList.remove("open");
+}
+
+async function selectChat(chatId) {
+  stopActiveAudio();
+  abortInFlightRequests();
+  activeChatId = chatId;
+
+  const result = await fetch(`/api/chats/${chatId}`);
+  const chatData = await result.json();
+
+  renderChatMessages(chatData.messages || []);
+  await loadChats();
+}
+
+async function createNewChat() {
+  stopActiveAudio();
+  abortInFlightRequests();
+
+  const result = await fetch("/api/chats", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title: "New chat" })
+  });
+
+  const chatData = await result.json();
+  activeChatId = chatData.id;
+  clearChatMessages();
+  await loadChats();
+}
+
+async function fetchTtsAndPlay(text, transcript) {
+  try {
+    const result = await fetch("/api/tts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, transcript })
+    });
+    const audioData = await result.json();
+    await playGeminiAudio(audioData);
+  } catch (error) {
+    // TTS is optional and runs in the background.
+  }
+}
+
+async function processQuery(transcript, audioBlob = null) {
+  abortInFlightRequests();
+  abortController = new AbortController();
+  const signal = abortController.signal;
+
+  stopActiveAudio();
+  activeHoldingBubble = null;
+
+  if (!app.classList.contains("logs-open")) {
+    app.classList.add("logs-open");
+    logsToggle.classList.add("active");
+  }
+
+  clearPipelineLogs();
+  setComposerBusy(true);
+  status.innerText = "Thinking";
+  status.className = "status";
+  hint.innerText = "Processing your query...";
+
+  try {
+    const chatId = await ensureActiveChat();
+    addMessage("user", transcript);
+
+    let data;
+
+    if (audioBlob) {
+      const form = new FormData();
+      form.append("audio", audioBlob, "query.webm");
+      form.append("chat_id", chatId);
+
+      const voiceResult = await fetch("/api/voice-query", {
+        method: "POST",
+        body: form,
+        signal
+      });
+      data = await voiceResult.json();
+    } else {
+      const queryResult = await fetch("/api/query", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          transcript,
+          chat_id: chatId
+        }),
+        signal
+      });
+      data = await queryResult.json();
+    }
+
+    appendLogs(data.logs);
+
+    if (data.holding_response) {
+      status.innerText = "Searching";
+      hint.innerText = "Looking up the latest information...";
+      activeHoldingBubble = addMessage("assistant", data.holding_response);
+    }
+
+    if (activeHoldingBubble) {
+      activeHoldingBubble.innerText = data.response || "(No response returned)";
+    } else {
+      addMessage("assistant", data.response || "(No response returned)");
+    }
+
+    appendLogs([{
+      step: "session.complete",
+      status: "completed",
+      message: "Playground query finished",
+      timestamp: new Date().toISOString(),
+      details: { intent: data.intent }
+    }]);
+
+    await loadChats();
+
+    if (data.response) {
+      fetchTtsAndPlay(data.response, transcript);
+    }
+  } catch (error) {
+    if (error.name === "AbortError") {
+      return;
+    }
+
+    appendLogs([{
+      step: "session.error",
+      status: "error",
+      message: error.message || "Something went wrong while processing the query.",
+      timestamp: new Date().toISOString(),
+      details: {}
+    }]);
+
+    if (activeHoldingBubble) {
+      activeHoldingBubble.innerText = "Something went wrong while processing the query.";
+    } else {
+      addMessage("assistant", "Something went wrong while processing the query.");
+    }
+  } finally {
+    activeHoldingBubble = null;
+    setComposerBusy(false);
+    start.disabled = false;
+    stop.disabled = true;
+    status.innerText = "Ready";
+    hint.innerText = "Type and press Send, or use Start / Stop for voice.";
+    abortController = null;
+  }
+}
+
+logsToggle.onclick = () => {
+  app.classList.toggle("logs-open");
+  logsToggle.classList.toggle("active");
+};
+
+clearLogs.onclick = clearPipelineLogs;
+newChat.onclick = createNewChat;
+
+profileButton.onclick = event => {
+  event.stopPropagation();
+  profileMenu.classList.toggle("open");
+};
+
+openPersonalisation.onclick = () => {
+  profileMenu.classList.remove("open");
+  profileModal.classList.add("open");
+};
+
+closePersonalisation.onclick = () => {
+  profileModal.classList.remove("open");
+};
+
+savePersonalisation.onclick = saveProfile;
+
+profileModal.onclick = event => {
+  if (event.target === profileModal) {
+    profileModal.classList.remove("open");
+  }
+};
+
+document.addEventListener("click", () => {
+  profileMenu.classList.remove("open");
+});
+
+sendText.onclick = async () => {
+  const transcript = textInput.value.trim();
+  if (!transcript || isProcessing) return;
+  textInput.value = "";
+  await processQuery(transcript);
+};
+
+textInput.addEventListener("keydown", async event => {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    sendText.click();
+  }
+});
+
+start.onclick = async () => {
+  stopActiveAudio();
+  abortInFlightRequests();
+
+  if (recorder && recorder.state === "recording") {
+    return;
+  }
+
+  chunks = [];
+
+  mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+  recorder = new MediaRecorder(mediaStream, {
+    mimeType: "audio/webm"
+  });
+
+  recorder.ondataavailable = event => {
+    if (event.data.size > 0) {
+      chunks.push(event.data);
+    }
+  };
+
+  recorder.start();
+
+  start.disabled = true;
+  stop.disabled = false;
+  sendText.disabled = true;
+  textInput.disabled = true;
+  status.innerText = "Recording";
+  status.className = "status recording";
+  hint.innerText = "Listening... click Start during TTS to interrupt and record.";
+};
+
+stop.onclick = async () => {
+  if (!recorder || recorder.state !== "recording") {
+    return;
+  }
+
+  stop.disabled = true;
+  status.innerText = "Thinking";
+  status.className = "status";
+  hint.innerText = "Sending audio to Luvio...";
+
+  appendLogs([{
+    step: "speech.record",
+    status: "completed",
+    message: "Browser finished recording audio from microphone",
+    timestamp: new Date().toISOString(),
+    details: { format: "audio/webm" }
+  }]);
+
+  recorder.stop();
+
+  recorder.onstop = async () => {
+    if (mediaStream) {
+      mediaStream.getTracks().forEach(track => track.stop());
+      mediaStream = null;
+    }
+
+    try {
+      const blob = new Blob(chunks, { type: "audio/webm" });
+
+      appendLogs([{
+        step: "speech.record",
+        status: "completed",
+        message: "Browser finished recording audio from microphone",
+        timestamp: new Date().toISOString(),
+        details: { format: "audio/webm" }
+      }]);
+
+      if (!app.classList.contains("logs-open")) {
+        app.classList.add("logs-open");
+        logsToggle.classList.add("active");
+      }
+
+      clearPipelineLogs();
+      setComposerBusy(true);
+
+      const chatId = await ensureActiveChat();
+      const form = new FormData();
+      form.append("audio", blob, "query.webm");
+      form.append("chat_id", chatId);
+
+      abortController = new AbortController();
+      const signal = abortController.signal;
+
+      const voiceResult = await fetch("/api/voice-query", {
+        method: "POST",
+        body: form,
+        signal
+      });
+
+      const data = await voiceResult.json();
+      appendLogs(data.logs);
+
+      const transcript = data.transcript || "(No transcript returned)";
+      addMessage("user", transcript);
+
+      if (data.holding_response) {
+        status.innerText = "Searching";
+        hint.innerText = "Looking up the latest information...";
+        activeHoldingBubble = addMessage("assistant", data.holding_response);
+      }
+
+      if (activeHoldingBubble) {
+        activeHoldingBubble.innerText = data.response || "(No response returned)";
+      } else {
+        addMessage("assistant", data.response || "(No response returned)");
+      }
+
+      appendLogs([{
+        step: "session.complete",
+        status: "completed",
+        message: "Playground query finished",
+        timestamp: new Date().toISOString(),
+        details: { intent: data.intent }
+      }]);
+
+      await loadChats();
+
+      if (data.response) {
+        fetchTtsAndPlay(data.response, transcript);
+      }
+    } catch (error) {
+      if (error.name !== "AbortError") {
+        appendLogs([{
+          step: "session.error",
+          status: "error",
+          message: error.message || "Something went wrong while processing the audio.",
+          timestamp: new Date().toISOString(),
+          details: {}
+        }]);
+      }
+    } finally {
+      activeHoldingBubble = null;
+      start.disabled = false;
+      stop.disabled = true;
+      sendText.disabled = false;
+      textInput.disabled = false;
+      status.innerText = "Ready";
+      hint.innerText = "Type and press Send, or use Start / Stop for voice.";
+      abortController = null;
+    }
+  };
+};
+
+loadProfile().then(async () => {
+  await loadChats();
+
+  const result = await fetch("/api/chats");
+  const chats = await result.json();
+
+  if (chats.length) {
+    await selectChat(chats[0].id);
+  } else {
+    await createNewChat();
+  }
+});
+</script>
+</body>
+</html>
+"""
+
+
+@app.get("/api/chats")
+def list_chats():
+    return orchestrator.list_chats()
+
+
+@app.post("/api/chats")
+def create_chat(request: CreateChatRequest):
+    return orchestrator.create_chat(request.title)
+
+
+@app.get("/api/chats/{chat_id}")
+def get_chat(chat_id: str):
+    chat = orchestrator.get_chat(chat_id)
+
+    if chat is None:
+        raise HTTPException(status_code=404, detail="Chat not found")
+
+    return chat
+
+
+@app.delete("/api/chats/{chat_id}")
+def delete_chat(chat_id: str):
+    deleted = orchestrator.delete_chat(chat_id)
+
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Chat not found")
+
+    return {"deleted": True}
+
+
+@app.get("/api/profile")
+def get_profile():
+    return orchestrator.get_profile()
+
+
+@app.post("/api/profile")
+def save_profile(request: ProfileRequest):
+    return orchestrator.save_profile(request.model_dump())
+
+
+@app.post("/api/query")
+def query(request: TranscriptRequest):
+    with pipeline_session() as pipeline_logger:
+        result = orchestrator.process_query(
+            request.transcript,
+            chat_id=request.chat_id,
+            intent=request.intent,
+        )
+        result["logs"] = pipeline_logger.to_list()
+        return result
+
+
+@app.post("/api/voice-query")
+async def voice_query(
+    audio: UploadFile = File(...),
+    chat_id: str | None = Form(default=None),
+):
+    audio_bytes = await audio.read()
+
+    with pipeline_session() as pipeline_logger:
+        result = orchestrator.process_voice_query(
+            audio_bytes=audio_bytes,
+            mime_type=audio.content_type or "audio/webm",
+            chat_id=chat_id,
+        )
+        result["logs"] = pipeline_logger.to_list()
+        return result
+
+
+@app.post("/api/tts")
+def tts(request: TtsRequest):
+    with pipeline_session() as pipeline_logger:
+        audio = orchestrator.generate_tts(
+            request.text,
+            transcript=request.transcript,
+        )
+        return {
+            **audio,
+            "logs": pipeline_logger.to_list(),
+        }
+
+
+@app.post("/api/classify-text")
+def classify_text(request: TranscriptRequest):
+    with pipeline_session() as pipeline_logger:
+        result = orchestrator.prepare_text_query(
+            request.transcript
+        )
+        result["logs"] = pipeline_logger.to_list()
+        return result
+
+
+@app.post("/api/query-audio")
+async def query_audio(audio: UploadFile = File(...)):
+    audio_bytes = await audio.read()
+
+    with pipeline_session() as pipeline_logger:
+        result = orchestrator.process_audio_bytes(
+            audio_bytes=audio_bytes,
+            mime_type=audio.content_type or "audio/webm",
+        )
+        result["logs"] = pipeline_logger.to_list()
+        return result
+
+
+@app.post("/api/transcribe-audio")
+async def transcribe_audio(audio: UploadFile = File(...)):
+    audio_bytes = await audio.read()
+
+    with pipeline_session() as pipeline_logger:
+        result = orchestrator.transcribe_audio_bytes(
+            audio_bytes=audio_bytes,
+            mime_type=audio.content_type or "audio/webm",
+        )
+        result["logs"] = pipeline_logger.to_list()
+        return result
+
+
+@app.post("/api/holding-response")
+def holding_response(request: TranscriptRequest):
+    with pipeline_session() as pipeline_logger:
+        response = orchestrator.build_holding_response(
+            request.transcript
+        )
+        return {
+            "response": response,
+            "logs": pipeline_logger.to_list(),
+        }
+
+
+@app.post("/api/respond")
+def respond(request: TranscriptRequest):
+    with pipeline_session() as pipeline_logger:
+        history = None
+
+        if request.chat_id:
+            history = orchestrator.chats.get_history(
+                request.chat_id
+            )
+
+        result = orchestrator.process_transcript(
+            request.transcript,
+            history=history,
+            intent=request.intent,
+            chat_id=request.chat_id,
+        )
+        result["logs"] = pipeline_logger.to_list()
+        return result

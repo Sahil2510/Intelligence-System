@@ -15,3 +15,9 @@ HOLDING_RESPONSE_PROMPT_NAME = os.getenv(
     "HOLDING_RESPONSE_PROMPT_NAME",
     "holding-response-luvio",
 )
+
+GEMINI_TTS_MODEL = os.getenv(
+    "GEMINI_TTS_MODEL",
+    "gemini-2.5-flash-preview-tts",
+)
+GEMINI_TTS_VOICE = os.getenv("GEMINI_TTS_VOICE", "Kore")

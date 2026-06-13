@@ -1,0 +1,20 @@
+{
+  "default_intent": "normal",
+  "intent_classification": {
+    "method": "gemini"
+  },
+  "tools": [
+    {
+      "name": "web_search",
+      "enabled": true,
+      "show_holding_response": true,
+      "description": "Fresh or time-sensitive information such as weather, news, leaders, sports, and prices."
+    },
+    {
+      "name": "spotify",
+      "enabled": true,
+      "show_holding_response": false,
+      "description": "Music playback control such as play, pause, skip, or queue songs on Spotify."
+    }
+  ]
+}

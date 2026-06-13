@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "luvio-intelligence"
+version = "0.1.0"
+description = "Luvio voice intelligence playground and pipeline"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+luvio = "app.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
