@@ -1,8 +1,14 @@
 import argparse
-import sys
+import os
+from pathlib import Path
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _run_playground(args: argparse.Namespace) -> None:
+    os.chdir(PROJECT_ROOT)
+
     import uvicorn
 
     uvicorn.run(

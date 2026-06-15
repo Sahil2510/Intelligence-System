@@ -28,7 +28,10 @@ Choose web_search when the answer depends on current, recent, or changing inform
 - news, sports scores, stock prices, or live events
 - anything where an outdated answer would be wrong
 
-Choose spotify only when the user clearly wants music playback control on Spotify.
+Choose spotify when the user clearly wants music on Spotify, such as:
+- play, pause, resume, skip, next, previous
+- search for a song, artist, album, or playlist
+- ask what is currently playing
 
 Choose normal for stable general knowledge, opinions, explanations, or conversation.
 

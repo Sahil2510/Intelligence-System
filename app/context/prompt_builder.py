@@ -8,16 +8,16 @@ class PromptBuilder:
 
     def __init__(self):
         self.prompts = PromptRegistry()
-        self.profile_store = ProfileStore()
 
     def build(
         self,
         transcript: str,
-        history: list
+        history: list,
+        profile: dict | None = None,
     ) -> str:
         system_prompt = self._fetch_system_prompt()
         history_text = self._format_history(history)
-        profile_text = self.profile_store.format_for_prompt()
+        profile_text = ProfileStore.format_for_prompt(profile)
 
         return (
             f"{system_prompt}\n\n"
@@ -34,10 +34,11 @@ class PromptBuilder:
         self,
         transcript: str,
         history: list,
+        profile: dict | None = None,
     ) -> str:
         web_search_prompt = self._fetch_web_search_prompt()
         history_text = self._format_history(history)
-        profile_text = self.profile_store.format_for_prompt()
+        profile_text = ProfileStore.format_for_prompt(profile)
 
         return (
             f"{web_search_prompt}\n\n"
@@ -56,10 +57,11 @@ class PromptBuilder:
         history: list,
         tool_name: str,
         tool_result: str,
+        profile: dict | None = None,
     ) -> str:
         system_prompt = self._fetch_system_prompt()
         history_text = self._format_history(history)
-        profile_text = self.profile_store.format_for_prompt()
+        profile_text = ProfileStore.format_for_prompt(profile)
 
         return (
             f"{system_prompt}\n\n"

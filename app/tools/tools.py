@@ -8,9 +8,11 @@ from app.conversation.responder import (
     generate_response,
     generate_with_google_search,
 )
+from app.tools.spotify_client import SpotifyClient
 from app.utils.pipeline_log import pipeline_complete, pipeline_start
 
 TOOLS_JSON = Path(__file__).parent / "tools.json"
+_spotify_client = SpotifyClient()
 
 VALID_INTENTS = {"normal", "web_search", "spotify"}
 
@@ -49,6 +51,9 @@ def _normalize_intent(raw_intent: str) -> str:
 
     if cleaned in VALID_INTENTS:
         return cleaned
+
+    if "spotify" in cleaned:
+        return "spotify"
 
     if "web" in cleaned and "search" in cleaned:
         return "web_search"
@@ -94,6 +99,7 @@ def execute_tool(
     transcript: str,
     history: list,
     prompt_builder: PromptBuilder,
+    profile: dict | None = None,
 ) -> str:
     if intent == "web_search":
         pipeline_start(
@@ -104,6 +110,7 @@ def execute_tool(
         prompt = prompt_builder.build_web_search(
             transcript,
             history,
+            profile=profile,
         )
         response = generate_with_google_search(prompt)
         pipeline_complete(
@@ -122,6 +129,7 @@ def execute_tool(
             transcript,
             history,
             prompt_builder,
+            profile=profile,
         )
         pipeline_complete(
             "tool.spotify",
@@ -138,6 +146,7 @@ def execute_tool(
     prompt = prompt_builder.build(
         transcript,
         history,
+        profile=profile,
     )
     response = generate_response(prompt)
     pipeline_complete(
@@ -148,22 +157,41 @@ def execute_tool(
     return response
 
 
-def _run_spotify(
+def run_spotify_query(
     transcript: str,
     history: list,
     prompt_builder: PromptBuilder,
-) -> str:
-    tool_result = (
-        "Spotify is not connected yet. "
-        "Acknowledge the music request briefly and say playback control "
-        "will be available once Spotify is linked."
-    )
+    profile: dict | None = None,
+) -> tuple[str, dict | None]:
+    outcome = _spotify_client.handle_user_request(transcript)
+    tool_result = outcome["message"]
+    playback = outcome.get("playback")
+
+    if (playback or {}).get("action") == "play":
+        return "", playback
 
     prompt = prompt_builder.build_with_tool_result(
         transcript=transcript,
         history=history,
         tool_name="spotify",
         tool_result=tool_result,
+        profile=profile,
     )
 
-    return generate_response(prompt)
+    response = generate_response(prompt)
+    return response, playback
+
+
+def _run_spotify(
+    transcript: str,
+    history: list,
+    prompt_builder: PromptBuilder,
+    profile: dict | None = None,
+) -> str:
+    response, _playback = run_spotify_query(
+        transcript,
+        history,
+        prompt_builder,
+        profile=profile,
+    )
+    return response

@@ -1,10 +1,13 @@
 from contextlib import contextmanager
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
 
+from app.config import SPOTIFY_CLIENT_ID
+from app.conversation.tts_jobs import get_tts_job
 from app.orchestrator.intelligence import IntelligenceOrchestrator
+from app.tools.spotify_client import SpotifyClient, SpotifyApiError, SpotifyAuthRequired
 from app.utils.pipeline_log import (
     PipelineLogger,
     reset_pipeline_logger,
@@ -14,12 +17,29 @@ from app.utils.pipeline_log import (
 
 app = FastAPI()
 orchestrator = IntelligenceOrchestrator()
+spotify_client = SpotifyClient()
+
+
+class ProfileRequest(BaseModel):
+    name: str = ""
+    age: str = ""
+    dob: str = ""
+    height: str = ""
+    weight: str = ""
 
 
 class TranscriptRequest(BaseModel):
     transcript: str
     intent: str | None = None
     chat_id: str | None = None
+    profile: ProfileRequest | None = None
+
+
+def _profile_payload(profile: ProfileRequest | None) -> dict | None:
+    if profile is None:
+        return None
+
+    return profile.model_dump()
 
 
 class CreateChatRequest(BaseModel):
@@ -31,12 +51,9 @@ class TtsRequest(BaseModel):
     transcript: str = ""
 
 
-class ProfileRequest(BaseModel):
-    name: str = ""
-    age: str = ""
-    dob: str = ""
-    height: str = ""
-    weight: str = ""
+class SpotifyPlayRequest(BaseModel):
+    uri: str
+    device_id: str
 
 
 @contextmanager
@@ -231,6 +248,105 @@ PLAYGROUND_HTML = """
     }
 
     .profile-menu button:hover { background: #f3f4f6; }
+
+    .now-playing {
+      display: none;
+      margin-top: 10px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: #ecfdf5;
+      border: 1px solid #a7f3d0;
+      font-size: 13px;
+      color: #065f46;
+    }
+
+    .now-playing.active { display: block; }
+
+    .now-playing-card {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .now-playing-art {
+      width: 64px;
+      height: 64px;
+      border-radius: 8px;
+      object-fit: cover;
+      background: #d1fae5;
+      flex-shrink: 0;
+    }
+
+    .now-playing-meta {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .now-playing-title {
+      font-size: 14px;
+      font-weight: 650;
+      color: #064e3b;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .now-playing-artist {
+      font-size: 13px;
+      color: #047857;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .now-playing-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #059669;
+    }
+
+    .now-playing-status.paused { color: #6b7280; }
+
+    .now-playing-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #10b981;
+      animation: pulse 1.2s ease-in-out infinite;
+    }
+
+    .now-playing-status.paused .now-playing-dot {
+      animation: none;
+      background: #9ca3af;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.45; transform: scale(0.85); }
+    }
+
+    .now-playing-toggle {
+      width: 42px;
+      height: 42px;
+      min-width: 42px;
+      padding: 0;
+      border-radius: 50%;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      flex-shrink: 0;
+    }
+
+    .now-playing iframe {
+      display: block;
+      width: 100%;
+      border: 0;
+      border-radius: 12px;
+    }
 
     .modal-backdrop {
       display: none;
@@ -601,10 +717,11 @@ PLAYGROUND_HTML = """
           ></textarea>
           <div class="composer-row">
             <div class="hint" id="hint">Type and press Send, or use Start / Stop for voice.</div>
-            <button class="secondary" id="sendText">Send</button>
-            <button class="secondary" id="start">Start</button>
-            <button id="stop" disabled>Stop</button>
+            <button type="button" class="secondary" id="sendText">Send</button>
+            <button type="button" class="secondary" id="start">Start</button>
+            <button type="button" id="stop" disabled>Stop</button>
           </div>
+          <div class="now-playing" id="nowPlaying"></div>
         </div>
       </div>
     </div>
@@ -663,6 +780,18 @@ let abortController = null;
 let isProcessing = false;
 let activeChatId = null;
 let logsPinnedToBottom = true;
+let ttsInProgress = false;
+let spotifyQueue = [];
+let spotifyIndex = 0;
+let spotifyAudio = null;
+let spotifyNowPlaying = null;
+let spotifyPlayer = null;
+let spotifyDeviceId = null;
+let spotifySdkReady = false;
+let spotifyInitPromise = null;
+let spotifyIsPlaying = false;
+
+const PROFILE_STORAGE_KEY = "luvio-profile";
 
 const app = document.getElementById("app");
 const start = document.getElementById("start");
@@ -685,6 +814,7 @@ const profileButton = document.getElementById("profileButton");
 const profileMenu = document.getElementById("profileMenu");
 const openPersonalisation = document.getElementById("openPersonalisation");
 const profileModal = document.getElementById("profileModal");
+const nowPlaying = document.getElementById("nowPlaying");
 const closePersonalisation = document.getElementById("closePersonalisation");
 const savePersonalisation = document.getElementById("savePersonalisation");
 const profileName = document.getElementById("profileName");
@@ -717,6 +847,451 @@ function stopActiveAudio() {
   }
 }
 
+function stopSpotifyAudio() {
+  if (spotifyAudio) {
+    spotifyAudio.pause();
+    spotifyAudio.currentTime = 0;
+    spotifyAudio.src = "";
+    spotifyAudio = null;
+  }
+}
+
+async function pauseSpotifyPlayback() {
+  if (spotifyAudio) {
+    spotifyAudio.pause();
+  }
+
+  if (spotifyPlayer) {
+    await spotifyPlayer.pause();
+  }
+
+  spotifyIsPlaying = false;
+
+  if (spotifyNowPlaying) {
+    renderNowPlayingPanel(spotifyNowPlaying, { playing: false });
+  }
+}
+
+async function stopSpotifyPlayback() {
+  stopSpotifyAudio();
+
+  if (spotifyPlayer) {
+    await spotifyPlayer.pause();
+  }
+
+  spotifyIsPlaying = false;
+
+  if (spotifyNowPlaying) {
+    renderNowPlayingPanel(spotifyNowPlaying, { playing: false });
+  }
+}
+
+async function resumeSpotifyPlayback() {
+  if (spotifyAudio) {
+    await spotifyAudio.play().catch(() => {});
+    spotifyIsPlaying = true;
+    renderNowPlayingPanel(spotifyNowPlaying, { playing: true });
+    return;
+  }
+
+  if (spotifyPlayer) {
+    await spotifyPlayer.resume();
+    spotifyIsPlaying = true;
+    renderNowPlayingPanel(spotifyNowPlaying, { playing: true });
+    return;
+  }
+
+  if (spotifyQueue.length) {
+    await playSpotifyTrackAt(spotifyIndex);
+  }
+}
+
+async function toggleSpotifyPlayback() {
+  if (spotifyIsPlaying) {
+    await pauseSpotifyPlayback();
+    return;
+  }
+
+  await resumeSpotifyPlayback();
+}
+
+function clearNowPlaying() {
+  spotifyNowPlaying = null;
+  spotifyIsPlaying = false;
+  nowPlaying.classList.remove("active");
+  nowPlaying.innerHTML = "";
+}
+
+function trackFromSdkState(state) {
+  const current = state?.track_window?.current_track;
+  if (!current) {
+    return null;
+  }
+
+  const artists = (current.artists || [])
+    .map(artist => artist.name)
+    .filter(Boolean)
+    .join(", ");
+
+  return {
+    track_id: current.id || "",
+    uri: current.uri || "",
+    name: current.name || "Unknown track",
+    artists,
+    label: artists ? `${current.name} by ${artists}` : current.name,
+    image_url: current.album?.images?.[0]?.url || "",
+    url: current.external_urls?.spotify || "",
+  };
+}
+
+function renderNowPlayingPanel(track, options = {}) {
+  if (!track) {
+    clearNowPlaying();
+    return;
+  }
+
+  const playing = options.playing !== false;
+  spotifyIsPlaying = playing;
+  const title = track.name || track.label || "Unknown track";
+  const artist = track.artists || "";
+  const artMarkup = track.image_url
+    ? `<img class="now-playing-art" src="${track.image_url}" alt="">`
+    : `<div class="now-playing-art"></div>`;
+
+  nowPlaying.innerHTML = `
+    <div class="now-playing-card">
+      ${artMarkup}
+      <div class="now-playing-meta">
+        <div class="now-playing-title">${title}</div>
+        ${artist ? `<div class="now-playing-artist">${artist}</div>` : ""}
+        <div class="now-playing-status ${playing ? "" : "paused"}">
+          <span class="now-playing-dot"></span>
+          ${playing ? "Playing now" : "Paused"}
+        </div>
+      </div>
+      <button
+        type="button"
+        class="now-playing-toggle secondary"
+        data-spotify-toggle
+        aria-label="${playing ? "Pause" : "Play"}"
+      >${playing ? "Pause" : "Play"}</button>
+    </div>
+  `;
+  nowPlaying.classList.add("active");
+  spotifyNowPlaying = track;
+}
+
+function updateNowPlaying(track) {
+  renderNowPlayingPanel(track, { playing: true });
+}
+
+function showSpotifyEmbed(track) {
+  renderNowPlayingPanel(track, { playing: true });
+}
+
+function attachSpotifyPlayerListeners() {
+  if (!spotifyPlayer || spotifyPlayer._luvioListenersAttached) {
+    return;
+  }
+
+  spotifyPlayer._luvioListenersAttached = true;
+
+  spotifyPlayer.addListener("player_state_changed", state => {
+    if (!state) {
+      spotifyIsPlaying = false;
+      renderNowPlayingPanel(spotifyNowPlaying, { playing: false });
+      return;
+    }
+
+    const track = trackFromSdkState(state) || spotifyNowPlaying;
+    if (track) {
+      spotifyIsPlaying = !state.paused;
+      renderNowPlayingPanel(track, { playing: !state.paused });
+    }
+  });
+}
+
+function loadSpotifySdk() {
+  if (window.Spotify) {
+    return Promise.resolve();
+  }
+
+  return new Promise(resolve => {
+    const script = document.createElement("script");
+    script.src = "https://sdk.scdn.co/spotify-player.js";
+    script.async = true;
+    window.onSpotifyWebPlaybackSDKReady = () => resolve();
+    document.body.appendChild(script);
+  });
+}
+
+async function ensureSpotifyPlayer() {
+  if (spotifySdkReady && spotifyDeviceId) {
+    return true;
+  }
+
+  if (spotifyInitPromise) {
+    return spotifyInitPromise;
+  }
+
+  spotifyInitPromise = (async () => {
+    try {
+      const config = await fetch("/api/spotify/config").then(response => response.json());
+
+      if (!config.client_id || !config.connected || !config.has_streaming_scope) {
+        return false;
+      }
+
+      await loadSpotifySdk();
+
+      if (spotifyPlayer && spotifySdkReady) {
+        attachSpotifyPlayerListeners();
+        return true;
+      }
+
+      const ready = await new Promise(resolve => {
+        let settled = false;
+
+        const finish = value => {
+          if (settled) return;
+          settled = true;
+          resolve(value);
+        };
+
+        window.setTimeout(() => finish(false), 8000);
+
+        spotifyPlayer = new Spotify.Player({
+          name: "Luvio Playground",
+          getOAuthToken: callback => {
+            fetch("/api/spotify/token")
+              .then(response => {
+                if (!response.ok) {
+                  throw new Error("Spotify token unavailable");
+                }
+                return response.json();
+              })
+              .then(data => callback(data.access_token))
+              .catch(() => callback(""));
+          },
+          volume: 1.0
+        });
+
+        spotifyPlayer.addListener("ready", ({ device_id }) => {
+          spotifyDeviceId = device_id;
+          spotifySdkReady = true;
+          attachSpotifyPlayerListeners();
+          finish(true);
+        });
+
+        spotifyPlayer.addListener("not_ready", () => {
+          spotifySdkReady = false;
+        });
+
+        spotifyPlayer.addListener("initialization_error", () => finish(false));
+        spotifyPlayer.addListener("authentication_error", () => finish(false));
+        spotifyPlayer.addListener("account_error", () => finish(false));
+
+        spotifyPlayer.connect();
+      });
+
+      return ready;
+    } catch {
+      return false;
+    } finally {
+      spotifyInitPromise = null;
+    }
+  })();
+
+  return spotifyInitPromise;
+}
+
+async function playSpotifyTrackAt(index) {
+  if (!spotifyQueue.length || index < 0 || index >= spotifyQueue.length) {
+    return false;
+  }
+
+  const track = spotifyQueue[index];
+  spotifyIndex = index;
+  stopSpotifyAudio();
+  updateNowPlaying(track);
+  showSpotifyEmbed(track);
+  status.innerText = "Playing music";
+  hint.innerText = `Loaded ${track.label} in the playground player.`;
+
+  if (track.preview_url) {
+    spotifyAudio = new Audio(track.preview_url);
+    spotifyAudio.onended = () => {
+      if (spotifyIndex + 1 < spotifyQueue.length) {
+        playSpotifyTrackAt(spotifyIndex + 1);
+      }
+    };
+    hint.innerText = `Playing ${track.label} in the playground.`;
+    spotifyIsPlaying = true;
+    await spotifyAudio.play().catch(() => {});
+    return true;
+  }
+
+  const config = await fetch("/api/spotify/config").then(response => response.json());
+
+  if (config.connected && config.has_streaming_scope) {
+    sessionStorage.removeItem("spotify_auth_pending");
+  } else if (sessionStorage.getItem("spotify_auth_pending") !== "1") {
+    sessionStorage.setItem("spotify_auth_pending", "1");
+    redirectToSpotifyLogin({
+      action: "play",
+      tracks: spotifyQueue,
+      index: spotifyIndex
+    });
+    return true;
+  }
+
+  if (spotifyPlayer && typeof spotifyPlayer.activateElement === "function") {
+    spotifyPlayer.activateElement();
+  }
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const playerReady = await ensureSpotifyPlayer();
+
+    if (!playerReady || !track.uri || !spotifyDeviceId) {
+      await new Promise(resolve => window.setTimeout(resolve, 400));
+      continue;
+    }
+
+    const result = await fetch("/api/spotify/play", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        uri: track.uri,
+        device_id: spotifyDeviceId
+      })
+    });
+
+    if (result.ok) {
+      hint.innerText = `Playing ${track.label} in the playground.`;
+      spotifyIsPlaying = true;
+      renderNowPlayingPanel(track, { playing: true });
+      return true;
+    }
+
+    if (attempt === 2) {
+      const error = await result.json().catch(() => ({}));
+      hint.innerText = error.detail || `Loaded ${track.label}. Press play in the player below.`;
+      return true;
+    }
+
+    await new Promise(resolve => window.setTimeout(resolve, 400));
+  }
+
+  hint.innerText = `Loaded ${track.label}. Press play in the player below (Spotify Premium required for auto-play).`;
+  return true;
+}
+
+function redirectToSpotifyLogin(playback) {
+  if (playback) {
+    const pending = { ...playback };
+    delete pending.needs_auth;
+    sessionStorage.setItem("spotify_pending_playback", JSON.stringify(pending));
+  }
+  window.location.href = "/api/spotify/login";
+}
+
+async function resumePendingSpotifyPlayback() {
+  const raw = sessionStorage.getItem("spotify_pending_playback");
+  if (!raw) return;
+
+  sessionStorage.removeItem("spotify_pending_playback");
+  sessionStorage.removeItem("spotify_auth_pending");
+
+  try {
+    const playback = JSON.parse(raw);
+    delete playback.needs_auth;
+    await handleSpotifyPlayback(playback);
+  } catch {
+    // Ignore invalid pending playback payloads.
+  }
+}
+
+async function handleSpotifyPlayback(playback) {
+  if (!playback || !playback.action) {
+    return;
+  }
+
+  if (playback.action === "connect") {
+    const config = await fetch("/api/spotify/config").then(response => response.json());
+    if (config.connected && config.has_streaming_scope) {
+      sessionStorage.removeItem("spotify_auth_pending");
+      return;
+    }
+    if (sessionStorage.getItem("spotify_auth_pending") !== "1") {
+      redirectToSpotifyLogin(playback);
+    }
+    return;
+  }
+
+  if (playback.action === "play") {
+    spotifyQueue = playback.tracks || [];
+    await playSpotifyTrackAt(playback.index || 0);
+    return;
+  }
+
+  if (playback.action === "pause") {
+    await pauseSpotifyPlayback();
+    status.innerText = "Paused";
+    hint.innerText = "Playback paused in the playground.";
+    return;
+  }
+
+  if (playback.action === "resume") {
+    await resumeSpotifyPlayback();
+    status.innerText = "Playing music";
+    hint.innerText = "Playback resumed in the playground.";
+    return;
+  }
+
+  if (playback.action === "next") {
+    await playSpotifyTrackAt(spotifyIndex + 1);
+    return;
+  }
+
+  if (playback.action === "previous") {
+    await playSpotifyTrackAt(Math.max(0, spotifyIndex - 1));
+    return;
+  }
+
+  if (playback.action === "now_playing") {
+    if (spotifyNowPlaying) {
+      hint.innerText = `Now playing: ${spotifyNowPlaying.label}`;
+    } else {
+      hint.innerText = "Nothing is playing in the playground right now.";
+    }
+  }
+}
+
+function emptyProfile() {
+  return { name: "", age: "", dob: "", height: "", weight: "" };
+}
+
+function getStoredProfile() {
+  try {
+    const raw = localStorage.getItem(PROFILE_STORAGE_KEY);
+    if (!raw) return emptyProfile();
+    return { ...emptyProfile(), ...JSON.parse(raw) };
+  } catch {
+    return emptyProfile();
+  }
+}
+
+function profileInitials(profile) {
+  const name = (profile.name || "").trim() || "Guest";
+  const parts = name.split(/\\s+/);
+
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+
+  return (name.slice(0, 2) || "G").toUpperCase();
+}
+
 function abortInFlightRequests() {
   if (abortController) {
     abortController.abort();
@@ -730,6 +1305,19 @@ function setComposerBusy(busy) {
   textInput.disabled = busy;
   start.disabled = busy && recorder && recorder.state === "recording" ? false : busy;
   stop.disabled = !recorder || recorder.state !== "recording";
+}
+
+function primeSpotifyAutoplay() {
+  if (spotifyPlayer && typeof spotifyPlayer.activateElement === "function") {
+    spotifyPlayer.activateElement();
+    return;
+  }
+
+  ensureSpotifyPlayer().then(ready => {
+    if (ready && spotifyPlayer && typeof spotifyPlayer.activateElement === "function") {
+      spotifyPlayer.activateElement();
+    }
+  });
 }
 
 function clearChatMessages() {
@@ -920,10 +1508,9 @@ async function deleteChat(chatId) {
 }
 
 async function loadProfile() {
-  const result = await fetch("/api/profile");
-  const profile = await result.json();
+  const profile = getStoredProfile();
 
-  profileButton.innerText = profile.initials || "G";
+  profileButton.innerText = profileInitials(profile);
   profileName.value = profile.name || "";
   profileAge.value = profile.age || "";
   profileDob.value = profile.dob || "";
@@ -931,21 +1518,17 @@ async function loadProfile() {
   profileWeight.value = profile.weight || "";
 }
 
-async function saveProfile() {
-  const result = await fetch("/api/profile", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      name: profileName.value.trim(),
-      age: profileAge.value.trim(),
-      dob: profileDob.value,
-      height: profileHeight.value.trim(),
-      weight: profileWeight.value.trim()
-    })
-  });
+function saveProfile() {
+  const profile = {
+    name: profileName.value.trim(),
+    age: profileAge.value.trim(),
+    dob: profileDob.value,
+    height: profileHeight.value.trim(),
+    weight: profileWeight.value.trim()
+  };
 
-  const profile = await result.json();
-  profileButton.innerText = profile.initials || "G";
+  localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile));
+  profileButton.innerText = profileInitials(profile);
   profileModal.classList.remove("open");
   profileMenu.classList.remove("open");
 }
@@ -979,25 +1562,222 @@ async function createNewChat() {
 }
 
 async function fetchTtsAndPlay(text, transcript) {
-  try {
-    const result = await fetch("/api/tts", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, transcript })
-    });
+  const result = await fetch("/api/tts", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text, transcript })
+  });
+
+  if (!result.ok) {
+    throw new Error(`TTS failed (${result.status})`);
+  }
+
+  const audioData = await result.json();
+  appendLogs(audioData.logs || []);
+  status.innerText = "Speaking";
+  hint.innerText = "Playing voice response...";
+  await playGeminiAudio(audioData);
+}
+
+async function pollTtsJobAndPlay(jobId) {
+  const maxAttempts = 150;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const result = await fetch(`/api/tts/${jobId}`);
+
+    if (result.status === 202) {
+      await new Promise(resolve => setTimeout(resolve, 200));
+      continue;
+    }
+
+    if (!result.ok) {
+      throw new Error(`TTS failed (${result.status})`);
+    }
+
     const audioData = await result.json();
+    status.innerText = "Speaking";
+    hint.innerText = "Playing voice response...";
     await playGeminiAudio(audioData);
+    return;
+  }
+
+  throw new Error("Timed out waiting for voice response.");
+}
+
+async function playResponseTts(data, transcript) {
+  if (!data.response) return;
+
+  ttsInProgress = true;
+  status.innerText = "Preparing voice";
+  hint.innerText = "Generating speech...";
+
+  try {
+    if (data.tts_id) {
+      await pollTtsJobAndPlay(data.tts_id);
+    } else {
+      await fetchTtsAndPlay(data.response, transcript);
+    }
   } catch (error) {
-    // TTS is optional and runs in the background.
+    appendLogs([{
+      step: "tts.error",
+      status: "error",
+      message: error.message || "Could not play voice response.",
+      timestamp: new Date().toISOString(),
+      details: {}
+    }]);
+  } finally {
+    ttsInProgress = false;
+    status.innerText = "Ready";
+    hint.innerText = "Type and press Send, or use Start / Stop for voice.";
   }
 }
 
-async function processQuery(transcript, audioBlob = null) {
+async function startHoldingResponse(transcript, profile, signal) {
+  if (!activeHoldingBubble) return;
+
+  try {
+    const result = await fetch("/api/holding-response", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ transcript, profile }),
+      signal
+    });
+
+    if (!result.ok) return;
+
+    const data = await result.json();
+    appendLogs(data.logs || []);
+
+    if (activeHoldingBubble && data.response) {
+      activeHoldingBubble.innerText = data.response;
+    }
+  } catch (error) {
+    if (error.name === "AbortError") {
+      throw error;
+    }
+  }
+}
+
+async function runTextQueryWithHolding(transcript, chatId, profile, signal) {
+  const classifyResult = await fetch("/api/classify-text", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ transcript, profile }),
+    signal
+  });
+
+  if (!classifyResult.ok) {
+    throw new Error("Could not classify the query.");
+  }
+
+  const classifyData = await classifyResult.json();
+  appendLogs(classifyData.logs || []);
+
+  if (classifyData.needs_holding) {
+    status.innerText = "Searching";
+    hint.innerText = "Looking up the latest information...";
+    activeHoldingBubble = addMessage(
+      "assistant",
+      classifyData.holding_response || "One moment, I'll check that for you."
+    );
+    startHoldingResponse(transcript, profile, signal);
+  }
+
+  const queryResult = await fetch("/api/query", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      transcript,
+      chat_id: chatId,
+      intent: classifyData.intent,
+      profile
+    }),
+    signal
+  });
+
+  if (!queryResult.ok) {
+    throw new Error("Could not generate a response.");
+  }
+
+  return queryResult.json();
+}
+
+async function runVoiceQueryWithHolding(audioBlob, chatId, profile, signal) {
+  const form = new FormData();
+  form.append("audio", audioBlob, "query.webm");
+
+  const transcribeResult = await fetch("/api/transcribe-audio", {
+    method: "POST",
+    body: form,
+    signal
+  });
+
+  if (!transcribeResult.ok) {
+    throw new Error("Could not transcribe the audio.");
+  }
+
+  const classifyData = await transcribeResult.json();
+  appendLogs(classifyData.logs || []);
+
+  const transcript = classifyData.transcript || "(No transcript returned)";
+  addMessage("user", transcript);
+
+  if (classifyData.needs_holding) {
+    status.innerText = "Searching";
+    hint.innerText = "Looking up the latest information...";
+    activeHoldingBubble = addMessage(
+      "assistant",
+      classifyData.holding_response || "One moment, I'll check that for you."
+    );
+    startHoldingResponse(transcript, profile, signal);
+  }
+
+  const queryResult = await fetch("/api/query", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      transcript,
+      chat_id: chatId,
+      intent: classifyData.intent,
+      profile
+    }),
+    signal
+  });
+
+  if (!queryResult.ok) {
+    throw new Error("Could not generate a response.");
+  }
+
+  const data = await queryResult.json();
+  data.transcript = transcript;
+  return data;
+}
+
+function showAssistantResponse(data) {
+  const isSpotifyPlay = data.spotify_playback?.action === "play";
+
+  if (activeHoldingBubble) {
+    if (data.response) {
+      activeHoldingBubble.innerText = data.response;
+    } else if (!isSpotifyPlay) {
+      activeHoldingBubble.innerText = "(No response returned)";
+    } else {
+      activeHoldingBubble.closest(".message")?.remove();
+    }
+  } else if (data.response) {
+    addMessage("assistant", data.response);
+  }
+
+  handleSpotifyPlayback(data.spotify_playback);
+}
+
+async function processQuery(transcript) {
   abortInFlightRequests();
   abortController = new AbortController();
   const signal = abortController.signal;
 
   stopActiveAudio();
+  await pauseSpotifyPlayback();
   activeHoldingBubble = null;
 
   if (!app.classList.contains("logs-open")) {
@@ -1011,48 +1791,24 @@ async function processQuery(transcript, audioBlob = null) {
   status.className = "status";
   hint.innerText = "Processing your query...";
 
+  const profile = getStoredProfile();
+
   try {
     const chatId = await ensureActiveChat();
     addMessage("user", transcript);
 
-    let data;
-
-    if (audioBlob) {
-      const form = new FormData();
-      form.append("audio", audioBlob, "query.webm");
-      form.append("chat_id", chatId);
-
-      const voiceResult = await fetch("/api/voice-query", {
-        method: "POST",
-        body: form,
-        signal
-      });
-      data = await voiceResult.json();
-    } else {
-      const queryResult = await fetch("/api/query", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          transcript,
-          chat_id: chatId
-        }),
-        signal
-      });
-      data = await queryResult.json();
-    }
+    const data = await runTextQueryWithHolding(
+      transcript,
+      chatId,
+      profile,
+      signal
+    );
 
     appendLogs(data.logs);
+    showAssistantResponse(data);
 
-    if (data.holding_response) {
-      status.innerText = "Searching";
-      hint.innerText = "Looking up the latest information...";
-      activeHoldingBubble = addMessage("assistant", data.holding_response);
-    }
-
-    if (activeHoldingBubble) {
-      activeHoldingBubble.innerText = data.response || "(No response returned)";
-    } else {
-      addMessage("assistant", data.response || "(No response returned)");
+    if (data.response && !(data.spotify_playback?.action === "play")) {
+      playResponseTts(data, transcript);
     }
 
     appendLogs([{
@@ -1063,11 +1819,7 @@ async function processQuery(transcript, audioBlob = null) {
       details: { intent: data.intent }
     }]);
 
-    await loadChats();
-
-    if (data.response) {
-      fetchTtsAndPlay(data.response, transcript);
-    }
+    loadChats();
   } catch (error) {
     if (error.name === "AbortError") {
       return;
@@ -1091,8 +1843,14 @@ async function processQuery(transcript, audioBlob = null) {
     setComposerBusy(false);
     start.disabled = false;
     stop.disabled = true;
-    status.innerText = "Ready";
-    hint.innerText = "Type and press Send, or use Start / Stop for voice.";
+    if (!ttsInProgress) {
+      if (spotifyNowPlaying) {
+        status.innerText = "Playing music";
+      } else {
+        status.innerText = "Ready";
+        hint.innerText = "Type and press Send, or use Start / Stop for voice.";
+      }
+    }
     abortController = null;
   }
 }
@@ -1131,10 +1889,20 @@ document.addEventListener("click", () => {
   profileMenu.classList.remove("open");
 });
 
+nowPlaying.addEventListener("click", event => {
+  if (!event.target.closest("[data-spotify-toggle]")) {
+    return;
+  }
+
+  event.preventDefault();
+  toggleSpotifyPlayback();
+});
+
 sendText.onclick = async () => {
   const transcript = textInput.value.trim();
   if (!transcript || isProcessing) return;
   textInput.value = "";
+  primeSpotifyAutoplay();
   await processQuery(transcript);
 };
 
@@ -1147,6 +1915,7 @@ textInput.addEventListener("keydown", async event => {
 
 start.onclick = async () => {
   stopActiveAudio();
+  await stopSpotifyPlayback();
   abortInFlightRequests();
 
   if (recorder && recorder.state === "recording") {
@@ -1175,7 +1944,7 @@ start.onclick = async () => {
   textInput.disabled = true;
   status.innerText = "Recording";
   status.className = "status recording";
-  hint.innerText = "Listening... click Start during TTS to interrupt and record.";
+  hint.innerText = "Listening... Spotify paused while recording.";
 };
 
 stop.onclick = async () => {
@@ -1183,6 +1952,7 @@ stop.onclick = async () => {
     return;
   }
 
+  primeSpotifyAutoplay();
   stop.disabled = true;
   status.innerText = "Thinking";
   status.className = "status";
@@ -1224,35 +1994,23 @@ stop.onclick = async () => {
       setComposerBusy(true);
 
       const chatId = await ensureActiveChat();
-      const form = new FormData();
-      form.append("audio", blob, "query.webm");
-      form.append("chat_id", chatId);
+      const profile = getStoredProfile();
 
       abortController = new AbortController();
       const signal = abortController.signal;
 
-      const voiceResult = await fetch("/api/voice-query", {
-        method: "POST",
-        body: form,
+      const data = await runVoiceQueryWithHolding(
+        blob,
+        chatId,
+        profile,
         signal
-      });
+      );
 
-      const data = await voiceResult.json();
       appendLogs(data.logs);
+      showAssistantResponse(data);
 
-      const transcript = data.transcript || "(No transcript returned)";
-      addMessage("user", transcript);
-
-      if (data.holding_response) {
-        status.innerText = "Searching";
-        hint.innerText = "Looking up the latest information...";
-        activeHoldingBubble = addMessage("assistant", data.holding_response);
-      }
-
-      if (activeHoldingBubble) {
-        activeHoldingBubble.innerText = data.response || "(No response returned)";
-      } else {
-        addMessage("assistant", data.response || "(No response returned)");
+      if (data.response && !(data.spotify_playback?.action === "play")) {
+        playResponseTts(data, data.transcript || "");
       }
 
       appendLogs([{
@@ -1263,11 +2021,7 @@ stop.onclick = async () => {
         details: { intent: data.intent }
       }]);
 
-      await loadChats();
-
-      if (data.response) {
-        fetchTtsAndPlay(data.response, transcript);
-      }
+      loadChats();
     } catch (error) {
       if (error.name !== "AbortError") {
         appendLogs([{
@@ -1280,20 +2034,22 @@ stop.onclick = async () => {
       }
     } finally {
       activeHoldingBubble = null;
-      start.disabled = false;
-      stop.disabled = true;
-      sendText.disabled = false;
-      textInput.disabled = false;
-      status.innerText = "Ready";
-      hint.innerText = "Type and press Send, or use Start / Stop for voice.";
+      setComposerBusy(false);
+      if (!ttsInProgress) {
+        if (spotifyNowPlaying) {
+          status.innerText = "Playing music";
+        } else {
+          status.innerText = "Ready";
+          hint.innerText = "Type and press Send, or use Start / Stop for voice.";
+        }
+      }
       abortController = null;
     }
   };
 };
 
-loadProfile().then(async () => {
-  await loadChats();
-
+loadProfile();
+loadChats().then(async () => {
   const result = await fetch("/api/chats");
   const chats = await result.json();
 
@@ -1302,6 +2058,10 @@ loadProfile().then(async () => {
   } else {
     await createNewChat();
   }
+
+  ensureSpotifyPlayer().finally(() => {
+    resumePendingSpotifyPlayback();
+  });
 });
 </script>
 </body>
@@ -1339,14 +2099,98 @@ def delete_chat(chat_id: str):
     return {"deleted": True}
 
 
-@app.get("/api/profile")
-def get_profile():
-    return orchestrator.get_profile()
+@app.get("/api/spotify/status")
+def spotify_status():
+    return {
+        "configured": spotify_client.is_configured(),
+        "connected": spotify_client.is_connected(),
+        "has_streaming_scope": spotify_client.has_streaming_scope(),
+        "mode": "playground_player",
+    }
 
 
-@app.post("/api/profile")
-def save_profile(request: ProfileRequest):
-    return orchestrator.save_profile(request.model_dump())
+@app.get("/api/spotify/config")
+def spotify_config():
+    return {
+        "client_id": SPOTIFY_CLIENT_ID,
+        "configured": spotify_client.is_configured(),
+        "connected": spotify_client.is_connected(),
+        "has_streaming_scope": spotify_client.has_streaming_scope(),
+    }
+
+
+@app.get("/api/spotify/token")
+def spotify_token():
+    token = spotify_client.get_access_token()
+
+    if not token:
+        raise HTTPException(status_code=401, detail="Spotify is not connected")
+
+    return {"access_token": token}
+
+
+@app.post("/api/spotify/play")
+def spotify_play(request: SpotifyPlayRequest):
+    try:
+        spotify_client.play_uri(
+            request.uri,
+            request.device_id,
+        )
+    except SpotifyAuthRequired as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    except SpotifyApiError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return {"playing": True}
+
+
+@app.get("/api/spotify/login")
+def spotify_login():
+    if not spotify_client.is_configured():
+        raise HTTPException(
+            status_code=400,
+            detail="Spotify credentials are missing from .env",
+        )
+
+    return RedirectResponse(spotify_client.authorization_url())
+
+
+@app.get("/api/spotify/callback", response_class=HTMLResponse)
+def spotify_callback(
+    code: str | None = None,
+    error: str | None = None,
+):
+    if error:
+        return HTMLResponse(
+            f"<h1>Spotify connection failed</h1><p>{error}</p>",
+            status_code=400,
+        )
+
+    if not code:
+        raise HTTPException(status_code=400, detail="Missing authorization code")
+
+    spotify_client.exchange_code(code)
+
+    return HTMLResponse(
+        """
+        <html>
+          <body style="font-family: sans-serif; padding: 40px;">
+            <h1>Spotify connected</h1>
+            <p>Returning to the Luvio playground...</p>
+            <script>
+              sessionStorage.removeItem("spotify_auth_pending");
+              window.location.href = "/";
+            </script>
+          </body>
+        </html>
+        """
+    )
+
+
+@app.post("/api/spotify/disconnect")
+def spotify_disconnect():
+    spotify_client.disconnect()
+    return {"connected": False}
 
 
 @app.post("/api/query")
@@ -1356,6 +2200,7 @@ def query(request: TranscriptRequest):
             request.transcript,
             chat_id=request.chat_id,
             intent=request.intent,
+            profile=_profile_payload(request.profile),
         )
         result["logs"] = pipeline_logger.to_list()
         return result
@@ -1389,6 +2234,28 @@ def tts(request: TtsRequest):
             **audio,
             "logs": pipeline_logger.to_list(),
         }
+
+
+@app.get("/api/tts/{job_id}")
+def get_tts(job_id: str):
+    job = get_tts_job(job_id)
+
+    if job is None:
+        raise HTTPException(status_code=404, detail="TTS job not found")
+
+    if job["status"] == "pending":
+        return JSONResponse(
+            status_code=202,
+            content={"status": "pending"},
+        )
+
+    if job["status"] == "error":
+        raise HTTPException(
+            status_code=500,
+            detail=job["error"] or "TTS generation failed",
+        )
+
+    return job["result"]
 
 
 @app.post("/api/classify-text")
@@ -1454,6 +2321,7 @@ def respond(request: TranscriptRequest):
             history=history,
             intent=request.intent,
             chat_id=request.chat_id,
+            profile=_profile_payload(request.profile),
         )
         result["logs"] = pipeline_logger.to_list()
         return result

@@ -1,0 +1,88 @@
+{
+  "id": "eef73433-cfba-4d14-a409-ba27a9e52c4e",
+  "title": "\u0905\u0939 \u0915\u0948\u0928 \u092f\u0942 \u091f\u0947\u0932 \u092e\u0940 \u092e\u093e\u092f \u0905\u0939 \u0928\u0947\u092e?",
+  "created_at": "2026-06-15T16:47:17.645995",
+  "updated_at": "2026-06-15T16:53:02.698773",
+  "messages": [
+    {
+      "role": "user",
+      "text": "\u0905\u0939 \u0915\u0948\u0928 \u092f\u0942 \u091f\u0947\u0932 \u092e\u0940 \u092e\u093e\u092f \u0905\u0939 \u0928\u0947\u092e?"
+    },
+    {
+      "role": "assistant",
+      "text": "\u0906\u092a\u0915\u093e \u0928\u093e\u092e \u0938\u093e\u0939\u093f\u0932 \u0939\u0948\u0964"
+    },
+    {
+      "role": "user",
+      "text": "[Thud] Give me details about me."
+    },
+    {
+      "role": "assistant",
+      "text": "Here are your details:\nYour name is Sahil.\nYou are twenty-five years old.\nYour date of birth is March thirtieth, two thousand one.\nYour height is five feet ten inches.\nYour weight is seventy-three kilograms.\n\nIs there anything else you'd like to know?"
+    },
+    {
+      "role": "user",
+      "text": "Call me Vijay."
+    },
+    {
+      "role": "assistant",
+      "text": "Okay, I'll call you Vijay."
+    },
+    {
+      "role": "user",
+      "text": "Can you tell me what is my name?"
+    },
+    {
+      "role": "assistant",
+      "text": "Your name is Vijay."
+    },
+    {
+      "role": "user",
+      "text": "\u0915\u0924\u0947 \u0917 Who is the PM of Who is the PM of"
+    },
+    {
+      "role": "assistant",
+      "text": "\u092d\u093e\u0930\u0924 \u0915\u0947 \u092a\u094d\u0930\u0927\u093e\u0928 \u092e\u0902\u0924\u094d\u0930\u0940 \u0936\u094d\u0930\u0940 \u0928\u0930\u0947\u0902\u0926\u094d\u0930 \u092e\u094b\u0926\u0940 \u0939\u0948\u0902\u0964 \u0909\u0928\u094d\u0939\u094b\u0902\u0928\u0947 \u0928\u094c \u091c\u0942\u0928, \u0926\u094b \u0939\u091c\u093c\u093e\u0930 \u091a\u094c\u092c\u0940\u0938 \u0915\u094b \u0924\u0940\u0938\u0930\u0940 \u092c\u093e\u0930 \u092d\u093e\u0930\u0924 \u0915\u0947 \u092a\u094d\u0930\u0927\u093e\u0928 \u092e\u0902\u0924\u094d\u0930\u0940 \u0915\u0947 \u0930\u0942\u092a \u092e\u0947\u0902 \u0936\u092a\u0925 \u0932\u0940\u0964\n\n\u0915\u094d\u092f\u093e \u0906\u092a \u0909\u0928\u0915\u0947 \u092c\u093e\u0930\u0947 \u092e\u0947\u0902 \u0915\u0941\u091b \u0914\u0930 \u091c\u093e\u0928\u0928\u093e \u091a\u093e\u0939\u0947\u0902\u0917\u0947?"
+    },
+    {
+      "role": "user",
+      "text": "Call me samosa."
+    },
+    {
+      "role": "assistant",
+      "text": "Okay, \u092e\u0948\u0902 \u0906\u092a\u0915\u094b \u0938\u092e\u094b\u0938\u093e \u092c\u0941\u0932\u093e\u090a\u0901\u0917\u093e\u0964"
+    },
+    {
+      "role": "user",
+      "text": "Can you tell me my name again?"
+    },
+    {
+      "role": "assistant",
+      "text": "Your name is Samosa.\n\n\u0915\u094d\u092f\u093e \u0906\u092a\u0915\u094b \u0915\u0941\u091b \u0914\u0930 \u091c\u093e\u0928\u0928\u093e \u0939\u0948?"
+    },
+    {
+      "role": "user",
+      "text": "Please tell me how many names I have given to you."
+    },
+    {
+      "role": "assistant",
+      "text": "You have given me two names. Is there anything else I can help you with?"
+    },
+    {
+      "role": "user",
+      "text": "Which are they?"
+    },
+    {
+      "role": "assistant",
+      "text": "They are Vijay and Samosa.\n\nWould you like to know anything else?"
+    },
+    {
+      "role": "user",
+      "text": "Can you tell me my real"
+    },
+    {
+      "role": "assistant",
+      "text": "Your real name is Sahil.\n\nIs there anything else I can help you with?"
+    }
+  ]
+}

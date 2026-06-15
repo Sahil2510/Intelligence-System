@@ -65,9 +65,11 @@ class ChatStore:
         chat["messages"].append(
             {"role": "user", "text": transcript}
         )
-        chat["messages"].append(
-            {"role": "assistant", "text": response}
-        )
+
+        if response:
+            chat["messages"].append(
+                {"role": "assistant", "text": response}
+            )
 
         if chat["title"] == "New chat" and transcript.strip():
             title = transcript.strip()

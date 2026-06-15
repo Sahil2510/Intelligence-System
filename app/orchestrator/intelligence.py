@@ -4,14 +4,15 @@ from app.conversation.transcriber import (
 )
 from app.conversation.responder import generate_speech
 from app.conversation.language import detect_language_hint
+from app.conversation.tts_jobs import start_tts_job
 from app.storage.transcript_store import TranscriptStore
 from app.storage.chat_store import ChatStore
-from app.storage.profile_store import ProfileStore
 from app.memory.short_term import ShortTermMemory
 from app.context.prompt_builder import PromptBuilder
 from app.tools.tools import (
     classify_intent,
     execute_tool,
+    run_spotify_query,
     should_show_holding,
 )
 from app.utils.pipeline_log import pipeline_complete, pipeline_start
@@ -24,7 +25,6 @@ class IntelligenceOrchestrator:
     def __init__(self):
         self.store = TranscriptStore()
         self.chats = ChatStore()
-        self.profiles = ProfileStore()
         self.stm = ShortTermMemory()
         self.prompt_builder = PromptBuilder()
 
@@ -39,18 +39,6 @@ class IntelligenceOrchestrator:
 
     def delete_chat(self, chat_id: str) -> bool:
         return self.chats.delete_chat(chat_id)
-
-    def get_profile(self) -> dict:
-        profile = self.profiles.get()
-        profile["display_name"] = self.profiles.display_name()
-        profile["initials"] = self.profiles.initials()
-        return profile
-
-    def save_profile(self, profile: dict) -> dict:
-        saved = self.profiles.save(profile)
-        saved["display_name"] = self.profiles.display_name()
-        saved["initials"] = self.profiles.initials()
-        return saved
 
     def generate_tts(
         self,
@@ -194,6 +182,7 @@ class IntelligenceOrchestrator:
         transcript: str,
         chat_id: str | None = None,
         intent: str | None = None,
+        profile: dict | None = None,
     ) -> dict:
         pipeline_start(
             "query.start",
@@ -210,6 +199,7 @@ class IntelligenceOrchestrator:
             transcript,
             chat_id=chat_id,
             intent=intent,
+            profile=profile,
         )
         result["holding_response"] = holding_response
 
@@ -226,6 +216,7 @@ class IntelligenceOrchestrator:
         audio_bytes: bytes,
         mime_type: str = "audio/webm",
         chat_id: str | None = None,
+        profile: dict | None = None,
     ) -> dict:
         pipeline_start(
             "voice.query.start",
@@ -241,6 +232,7 @@ class IntelligenceOrchestrator:
         result = self.process_query(
             transcript,
             chat_id=chat_id,
+            profile=profile,
         )
         result["transcript"] = transcript
 
@@ -274,6 +266,7 @@ class IntelligenceOrchestrator:
         history: list | None = None,
         intent: str | None = None,
         chat_id: str | None = None,
+        profile: dict | None = None,
     ):
         pipeline_start(
             "response.start",
@@ -296,12 +289,40 @@ class IntelligenceOrchestrator:
                 },
             )
 
-        response = execute_tool(
-            intent=intent,
-            transcript=transcript,
-            history=history,
-            prompt_builder=self.prompt_builder,
-        )
+        spotify_playback = None
+
+        if intent == "spotify":
+            response, spotify_playback = run_spotify_query(
+                transcript,
+                history,
+                self.prompt_builder,
+                profile=profile,
+            )
+        else:
+            response = execute_tool(
+                intent=intent,
+                transcript=transcript,
+                history=history,
+                prompt_builder=self.prompt_builder,
+                profile=profile,
+            )
+
+        tts_id = None
+        if not (
+            spotify_playback
+            and spotify_playback.get("action") == "play"
+        ):
+            tts_id = start_tts_job(
+                response,
+                transcript=transcript,
+            )
+
+        if tts_id:
+            pipeline_complete(
+                "tts.prefetch",
+                "Started background TTS generation",
+                {"tts_id": tts_id},
+            )
 
         pipeline_start(
             "memory.save",
@@ -338,6 +359,8 @@ class IntelligenceOrchestrator:
             "intent": intent,
             "response": response,
             "needs_holding": should_show_holding(intent),
+            "tts_id": tts_id,
+            "spotify_playback": spotify_playback,
         }
 
     def _fast_holding(self, intent: str) -> str | None:
