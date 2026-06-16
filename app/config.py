@@ -34,3 +34,12 @@ SPOTIFY_REDIRECT_URI = os.getenv(
     "http://127.0.0.1:8000/api/spotify/callback",
 )
 SPOTIFY_MARKET = os.getenv("SPOTIFY_MARKET", "IN")
+
+REDIS_URL = os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0")
+REDIS_STM_MAX_MESSAGES = int(os.getenv("REDIS_STM_MAX_MESSAGES", "40"))
+REDIS_STM_TTL_SECONDS = int(os.getenv("REDIS_STM_TTL_SECONDS", "604800"))
+STM_HISTORY_TURN_LIMIT = int(os.getenv("STM_HISTORY_TURN_LIMIT", "5"))
+
+MEM0_API_KEY = os.getenv("MEM0_API_KEY")
+MEM0_SEARCH_LIMIT = int(os.getenv("MEM0_SEARCH_LIMIT", "5"))
+DEFAULT_USER_ID = os.getenv("DEFAULT_USER_ID", "playground-default")

@@ -1,4 +1,5 @@
 from contextlib import contextmanager
+import json
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -32,6 +33,7 @@ class TranscriptRequest(BaseModel):
     transcript: str
     intent: str | None = None
     chat_id: str | None = None
+    user_id: str | None = None
     profile: ProfileRequest | None = None
 
 
@@ -792,6 +794,18 @@ let spotifyInitPromise = null;
 let spotifyIsPlaying = false;
 
 const PROFILE_STORAGE_KEY = "luvio-profile";
+const USER_ID_STORAGE_KEY = "luvio-user-id";
+
+function getUserId() {
+  let userId = localStorage.getItem(USER_ID_STORAGE_KEY);
+
+  if (!userId) {
+    userId = crypto.randomUUID();
+    localStorage.setItem(USER_ID_STORAGE_KEY, userId);
+  }
+
+  return userId;
+}
 
 const app = document.getElementById("app");
 const start = document.getElementById("start");
@@ -1639,7 +1653,7 @@ async function startHoldingResponse(transcript, profile, signal) {
     const result = await fetch("/api/holding-response", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ transcript, profile }),
+      body: JSON.stringify({ transcript, profile, user_id: getUserId() }),
       signal
     });
 
@@ -1662,7 +1676,7 @@ async function runTextQueryWithHolding(transcript, chatId, profile, signal) {
   const classifyResult = await fetch("/api/classify-text", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ transcript, profile }),
+    body: JSON.stringify({ transcript, profile, user_id: getUserId() }),
     signal
   });
 
@@ -1690,7 +1704,8 @@ async function runTextQueryWithHolding(transcript, chatId, profile, signal) {
       transcript,
       chat_id: chatId,
       intent: classifyData.intent,
-      profile
+      profile,
+      user_id: getUserId()
     }),
     signal
   });
@@ -1739,7 +1754,8 @@ async function runVoiceQueryWithHolding(audioBlob, chatId, profile, signal) {
       transcript,
       chat_id: chatId,
       intent: classifyData.intent,
-      profile
+      profile,
+      user_id: getUserId()
     }),
     signal
   });
@@ -2193,6 +2209,11 @@ def spotify_disconnect():
     return {"connected": False}
 
 
+@app.get("/api/memory/status")
+def memory_status():
+    return orchestrator.memory_status()
+
+
 @app.post("/api/query")
 def query(request: TranscriptRequest):
     with pipeline_session() as pipeline_logger:
@@ -2201,6 +2222,7 @@ def query(request: TranscriptRequest):
             chat_id=request.chat_id,
             intent=request.intent,
             profile=_profile_payload(request.profile),
+            user_id=request.user_id,
         )
         result["logs"] = pipeline_logger.to_list()
         return result
@@ -2210,14 +2232,25 @@ def query(request: TranscriptRequest):
 async def voice_query(
     audio: UploadFile = File(...),
     chat_id: str | None = Form(default=None),
+    user_id: str | None = Form(default=None),
+    profile: str | None = Form(default=None),
 ):
     audio_bytes = await audio.read()
+    profile_payload = None
+
+    if profile:
+        try:
+            profile_payload = json.loads(profile)
+        except json.JSONDecodeError:
+            profile_payload = None
 
     with pipeline_session() as pipeline_logger:
         result = orchestrator.process_voice_query(
             audio_bytes=audio_bytes,
             mime_type=audio.content_type or "audio/webm",
             chat_id=chat_id,
+            user_id=user_id,
+            profile=profile_payload,
         )
         result["logs"] = pipeline_logger.to_list()
         return result
@@ -2322,6 +2355,7 @@ def respond(request: TranscriptRequest):
             intent=request.intent,
             chat_id=request.chat_id,
             profile=_profile_payload(request.profile),
+            user_id=request.user_id,
         )
         result["logs"] = pipeline_logger.to_list()
         return result

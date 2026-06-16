@@ -100,6 +100,7 @@ def execute_tool(
     history: list,
     prompt_builder: PromptBuilder,
     profile: dict | None = None,
+    ltm_memories: list | None = None,
 ) -> str:
     if intent == "web_search":
         pipeline_start(
@@ -111,6 +112,7 @@ def execute_tool(
             transcript,
             history,
             profile=profile,
+            ltm_memories=ltm_memories,
         )
         response = generate_with_google_search(prompt)
         pipeline_complete(
@@ -147,6 +149,7 @@ def execute_tool(
         transcript,
         history,
         profile=profile,
+        ltm_memories=ltm_memories,
     )
     response = generate_response(prompt)
     pipeline_complete(
@@ -162,6 +165,7 @@ def run_spotify_query(
     history: list,
     prompt_builder: PromptBuilder,
     profile: dict | None = None,
+    ltm_memories: list | None = None,
 ) -> tuple[str, dict | None]:
     outcome = _spotify_client.handle_user_request(transcript)
     tool_result = outcome["message"]
@@ -176,6 +180,7 @@ def run_spotify_query(
         tool_name="spotify",
         tool_result=tool_result,
         profile=profile,
+        ltm_memories=ltm_memories,
     )
 
     response = generate_response(prompt)

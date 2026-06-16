@@ -1,3 +1,4 @@
+from app.config import DEFAULT_USER_ID, STM_HISTORY_TURN_LIMIT
 from app.conversation.transcriber import (
     transcribe_audio,
     transcribe_audio_bytes,
@@ -7,7 +8,8 @@ from app.conversation.language import detect_language_hint
 from app.conversation.tts_jobs import start_tts_job
 from app.storage.transcript_store import TranscriptStore
 from app.storage.chat_store import ChatStore
-from app.memory.short_term import ShortTermMemory
+from app.memory.short_term import RedisShortTermMemory
+from app.memory.long_term import LongTermMemory
 from app.context.prompt_builder import PromptBuilder
 from app.tools.tools import (
     classify_intent,
@@ -15,7 +17,7 @@ from app.tools.tools import (
     run_spotify_query,
     should_show_holding,
 )
-from app.utils.pipeline_log import pipeline_complete, pipeline_start
+from app.utils.pipeline_log import pipeline_complete, pipeline_error, pipeline_start
 
 FAST_HOLDING_RESPONSE = "One moment, I'll check that for you."
 
@@ -25,7 +27,8 @@ class IntelligenceOrchestrator:
     def __init__(self):
         self.store = TranscriptStore()
         self.chats = ChatStore()
-        self.stm = ShortTermMemory()
+        self.stm = RedisShortTermMemory()
+        self.ltm = LongTermMemory()
         self.prompt_builder = PromptBuilder()
 
     def list_chats(self) -> list[dict]:
@@ -55,40 +58,154 @@ class IntelligenceOrchestrator:
             language_hint=language_hint,
         )
 
+    @staticmethod
+    def _resolve_user_id(user_id: str | None) -> str:
+        cleaned = (user_id or "").strip()
+        return cleaned or DEFAULT_USER_ID
+
     def _load_history(
         self,
         chat_id: str | None = None,
     ) -> list:
-        if chat_id:
+        if not chat_id:
             pipeline_start(
-                "memory.load",
-                "Loading conversation history for active chat",
-                {"chat_id": chat_id},
+                "memory.stm.load",
+                "No chat_id provided; short-term memory unavailable",
+                {"turn_count": 0},
             )
-            history = self.chats.get_history(chat_id)
             pipeline_complete(
-                "memory.load",
-                "Chat history loaded",
-                {"history_count": len(history)},
+                "memory.stm.load",
+                "Short-term memory skipped",
+                {"turn_count": 0},
+            )
+            return []
+
+        try:
+            return self.stm.get_history(
+                chat_id,
+                limit=STM_HISTORY_TURN_LIMIT,
+            )
+        except Exception:
+            pipeline_start(
+                "memory.stm.load",
+                "Falling back to chat file history",
+                {
+                    "backend": "chat_store",
+                    "chat_id": chat_id,
+                    "turn_limit": STM_HISTORY_TURN_LIMIT,
+                },
+            )
+            history = self.chats.get_history(
+                chat_id,
+                limit=STM_HISTORY_TURN_LIMIT,
+            )
+            pipeline_complete(
+                "memory.stm.load",
+                "Short-term memory loaded from chat file fallback",
+                {
+                    "backend": "chat_store",
+                    "chat_id": chat_id,
+                    "turn_count": len(history),
+                },
             )
             return history
 
+    def _load_ltm(
+        self,
+        user_id: str,
+        transcript: str,
+    ) -> list[dict]:
+        return self.ltm.search(
+            user_id=user_id,
+            query=transcript,
+        )
+
+    @staticmethod
+    def _memory_response_text(
+        response: str,
+        spotify_playback: dict | None,
+    ) -> str:
+        if response.strip():
+            return response
+
+        if not spotify_playback or spotify_playback.get("action") != "play":
+            return response
+
+        tracks = spotify_playback.get("tracks") or []
+        index = spotify_playback.get("index") or 0
+
+        if not tracks or index >= len(tracks):
+            return response
+
+        label = tracks[index].get("label") or tracks[index].get("name") or "track"
+        return f"[Played: {label}]"
+
+    def _save_memories(
+        self,
+        *,
+        user_id: str,
+        chat_id: str | None,
+        transcript: str,
+        response: str,
+        intent: str,
+        spotify_playback: dict | None,
+    ) -> None:
+        memory_response = self._memory_response_text(
+            response,
+            spotify_playback,
+        )
+
+        if chat_id:
+            try:
+                self.stm.append_turn(
+                    chat_id,
+                    transcript,
+                    memory_response,
+                )
+            except Exception:
+                pipeline_error(
+                    "memory.stm.save",
+                    "Redis save failed; chat UI history will still be stored",
+                    {"chat_id": chat_id},
+                )
+
+            self.chats.append_turn(
+                chat_id,
+                transcript,
+                memory_response,
+            )
+
+        self.ltm.add_turn(
+            user_id=user_id,
+            transcript=transcript,
+            response=memory_response,
+            chat_id=chat_id,
+            intent=intent,
+        )
+
         pipeline_start(
-            "memory.load",
-            "Loading short-term conversation history",
+            "memory.audit.save",
+            "Saving audit transcript log",
+            {
+                "transcript_preview": transcript[:120],
+                "response_preview": memory_response[:120],
+            },
         )
-        history = self.stm.get_recent_conversations()
+        self.store.save(
+            transcript,
+            memory_response,
+        )
         pipeline_complete(
-            "memory.load",
-            "Short-term history loaded",
-            {"history_count": len(history)},
+            "memory.audit.save",
+            "Audit transcript log saved",
+            {"saved": True},
         )
-        return history
 
     def process_audio(
         self,
         audio_path: str,
         chat_id: str | None = None,
+        user_id: str | None = None,
     ):
         history = self._load_history(chat_id)
 
@@ -100,6 +217,7 @@ class IntelligenceOrchestrator:
             transcript,
             history=history,
             chat_id=chat_id,
+            user_id=user_id,
         )
 
     def process_audio_bytes(
@@ -107,6 +225,7 @@ class IntelligenceOrchestrator:
         audio_bytes: bytes,
         mime_type: str = "audio/webm",
         chat_id: str | None = None,
+        user_id: str | None = None,
     ):
         pipeline_start(
             "session.start",
@@ -121,6 +240,7 @@ class IntelligenceOrchestrator:
             audio_bytes=audio_bytes,
             mime_type=mime_type,
             chat_id=chat_id,
+            user_id=user_id,
         )
 
         pipeline_complete(
@@ -183,6 +303,7 @@ class IntelligenceOrchestrator:
         chat_id: str | None = None,
         intent: str | None = None,
         profile: dict | None = None,
+        user_id: str | None = None,
     ) -> dict:
         pipeline_start(
             "query.start",
@@ -200,6 +321,7 @@ class IntelligenceOrchestrator:
             chat_id=chat_id,
             intent=intent,
             profile=profile,
+            user_id=user_id,
         )
         result["holding_response"] = holding_response
 
@@ -217,6 +339,7 @@ class IntelligenceOrchestrator:
         mime_type: str = "audio/webm",
         chat_id: str | None = None,
         profile: dict | None = None,
+        user_id: str | None = None,
     ) -> dict:
         pipeline_start(
             "voice.query.start",
@@ -233,6 +356,7 @@ class IntelligenceOrchestrator:
             transcript,
             chat_id=chat_id,
             profile=profile,
+            user_id=user_id,
         )
         result["transcript"] = transcript
 
@@ -267,15 +391,27 @@ class IntelligenceOrchestrator:
         intent: str | None = None,
         chat_id: str | None = None,
         profile: dict | None = None,
+        user_id: str | None = None,
     ):
+        resolved_user_id = self._resolve_user_id(user_id)
+
         pipeline_start(
             "response.start",
             "Starting response generation",
-            {"transcript": transcript},
+            {
+                "transcript": transcript,
+                "user_id": resolved_user_id,
+                "chat_id": chat_id,
+            },
         )
 
         if history is None:
             history = self._load_history(chat_id)
+
+        ltm_memories = self._load_ltm(
+            resolved_user_id,
+            transcript,
+        )
 
         if intent is None:
             intent = classify_intent(transcript)
@@ -297,6 +433,7 @@ class IntelligenceOrchestrator:
                 history,
                 self.prompt_builder,
                 profile=profile,
+                ltm_memories=ltm_memories,
             )
         else:
             response = execute_tool(
@@ -305,6 +442,7 @@ class IntelligenceOrchestrator:
                 history=history,
                 prompt_builder=self.prompt_builder,
                 profile=profile,
+                ltm_memories=ltm_memories,
             )
 
         tts_id = None
@@ -324,25 +462,13 @@ class IntelligenceOrchestrator:
                 {"tts_id": tts_id},
             )
 
-        pipeline_start(
-            "memory.save",
-            "Saving transcript and response",
-        )
-        self.store.save(
-            transcript,
-            response
-        )
-
-        if chat_id:
-            self.chats.append_turn(
-                chat_id,
-                transcript,
-                response,
-            )
-
-        pipeline_complete(
-            "memory.save",
-            "Transcript stored to disk",
+        self._save_memories(
+            user_id=resolved_user_id,
+            chat_id=chat_id,
+            transcript=transcript,
+            response=response,
+            intent=intent,
+            spotify_playback=spotify_playback,
         )
 
         pipeline_complete(
@@ -351,6 +477,8 @@ class IntelligenceOrchestrator:
             {
                 "intent": intent,
                 "response_length": len(response),
+                "user_id": resolved_user_id,
+                "ltm_memory_count": len(ltm_memories),
             },
         )
 
@@ -361,6 +489,7 @@ class IntelligenceOrchestrator:
             "needs_holding": should_show_holding(intent),
             "tts_id": tts_id,
             "spotify_playback": spotify_playback,
+            "user_id": resolved_user_id,
         }
 
     def _fast_holding(self, intent: str) -> str | None:
@@ -368,3 +497,18 @@ class IntelligenceOrchestrator:
             return FAST_HOLDING_RESPONSE
 
         return None
+
+    def memory_status(self) -> dict:
+        return {
+            "stm": {
+                "backend": "redis",
+                "connected": self.stm.ping(),
+                "redis_url": self.stm.redis_url,
+                "turn_limit": STM_HISTORY_TURN_LIMIT,
+            },
+            "ltm": {
+                "backend": "mem0",
+                "enabled": self.ltm.enabled,
+                "search_limit": self.ltm.search_limit,
+            },
+        }

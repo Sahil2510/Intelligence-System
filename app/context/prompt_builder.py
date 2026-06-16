@@ -14,15 +14,19 @@ class PromptBuilder:
         transcript: str,
         history: list,
         profile: dict | None = None,
+        ltm_memories: list | None = None,
     ) -> str:
         system_prompt = self._fetch_system_prompt()
         history_text = self._format_history(history)
         profile_text = ProfileStore.format_for_prompt(profile)
+        ltm_text = self._format_ltm(ltm_memories)
 
         return (
             f"{system_prompt}\n\n"
             f"User profile:\n"
             f"{profile_text}\n\n"
+            f"Long-term memory:\n"
+            f"{ltm_text}\n\n"
             f"Previous conversations:\n"
             f"{history_text}\n\n"
             f"Current user message:\n"
@@ -35,15 +39,19 @@ class PromptBuilder:
         transcript: str,
         history: list,
         profile: dict | None = None,
+        ltm_memories: list | None = None,
     ) -> str:
         web_search_prompt = self._fetch_web_search_prompt()
         history_text = self._format_history(history)
         profile_text = ProfileStore.format_for_prompt(profile)
+        ltm_text = self._format_ltm(ltm_memories)
 
         return (
             f"{web_search_prompt}\n\n"
             f"User profile:\n"
             f"{profile_text}\n\n"
+            f"Long-term memory:\n"
+            f"{ltm_text}\n\n"
             f"Previous conversations:\n"
             f"{history_text}\n\n"
             f"Current user message:\n"
@@ -58,15 +66,19 @@ class PromptBuilder:
         tool_name: str,
         tool_result: str,
         profile: dict | None = None,
+        ltm_memories: list | None = None,
     ) -> str:
         system_prompt = self._fetch_system_prompt()
         history_text = self._format_history(history)
         profile_text = ProfileStore.format_for_prompt(profile)
+        ltm_text = self._format_ltm(ltm_memories)
 
         return (
             f"{system_prompt}\n\n"
             f"User profile:\n"
             f"{profile_text}\n\n"
+            f"Long-term memory:\n"
+            f"{ltm_text}\n\n"
             f"Previous conversations:\n"
             f"{history_text}\n\n"
             f"Tool ({tool_name}) result:\n"
@@ -125,6 +137,30 @@ class PromptBuilder:
             {"prompt_length": len(prompt)},
         )
         return prompt
+
+    @staticmethod
+    def _format_ltm(ltm_memories: list | None) -> str:
+        if not ltm_memories:
+            return "No long-term memories available."
+
+        lines = []
+
+        for item in ltm_memories:
+            memory = item.get("memory", "").strip()
+
+            if not memory:
+                continue
+
+            score = item.get("score")
+            if score is None:
+                lines.append(f"- {memory}")
+            else:
+                lines.append(f"- {memory} (score: {score})")
+
+        if not lines:
+            return "No long-term memories available."
+
+        return "\n".join(lines)
 
     def _format_history(
         self,

@@ -1,0 +1,11 @@
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - luvio_redis_data:/data
+    command: redis-server --appendonly yes
+
+volumes:
+  luvio_redis_data:
