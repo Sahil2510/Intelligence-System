@@ -39,7 +39,7 @@ def transcribe_audio_bytes(
     response = client.models.generate_content(
         model=MODEL,
         contents=[
-            "Transcribe this audio exactly.",
+            "Transcribe verbatim, same language as spoken:",
             types.Part.from_bytes(
                 data=audio_bytes,
                 mime_type=mime_type,

@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from app.conversation.language import detect_language_hint
 from app.conversation.responder import generate_speech
 
-_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="tts")
+_executor = ThreadPoolExecutor(max_workers=6, thread_name_prefix="tts")
 _jobs: dict[str, dict] = {}
 _lock = threading.Lock()
 

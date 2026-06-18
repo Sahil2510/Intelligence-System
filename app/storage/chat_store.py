@@ -1,7 +1,11 @@
 import json
+import os
+import threading
 import uuid
 from datetime import datetime
 from pathlib import Path
+
+from app.utils.logger import logger
 
 
 CHATS_DIR = Path("data/chats")
@@ -12,16 +16,35 @@ class ChatStore:
     def __init__(self, chats_dir: Path = CHATS_DIR):
         self.chats_dir = chats_dir
         self.chats_dir.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.Lock()
 
     def _path(self, chat_id: str) -> Path:
         return self.chats_dir / f"{chat_id}.json"
 
+    def _read_json(self, path: Path) -> dict | None:
+        try:
+            content = path.read_text(encoding="utf-8").strip()
+
+            if not content:
+                return None
+
+            return json.loads(content)
+        except (OSError, json.JSONDecodeError) as exc:
+            logger.warning("Skipping unreadable chat file %s: %s", path, exc)
+            return None
+
     def list_chats(self) -> list[dict]:
         chats = []
 
-        for file in self.chats_dir.glob("*.json"):
-            with file.open("r", encoding="utf-8") as handle:
-                chats.append(json.load(handle))
+        for file in sorted(self.chats_dir.glob("*.json")):
+            if file.name.endswith(".tmp"):
+                continue
+
+            with self._lock:
+                chat = self._read_json(file)
+
+            if chat is not None:
+                chats.append(chat)
 
         chats.sort(
             key=lambda chat: chat.get("updated_at", ""),
@@ -35,8 +58,8 @@ class ChatStore:
         if not path.exists():
             return None
 
-        with path.open("r", encoding="utf-8") as handle:
-            return json.load(handle)
+        with self._lock:
+            return self._read_json(path)
 
     def create_chat(self, title: str = "New chat") -> dict:
         now = datetime.utcnow().isoformat()
@@ -57,26 +80,28 @@ class ChatStore:
         transcript: str,
         response: str,
     ) -> dict | None:
-        chat = self.get_chat(chat_id)
+        with self._lock:
+            chat = self._read_json(self._path(chat_id))
 
-        if chat is None:
-            return None
+            if chat is None:
+                return None
 
-        chat["messages"].append(
-            {"role": "user", "text": transcript}
-        )
-
-        if response:
             chat["messages"].append(
-                {"role": "assistant", "text": response}
+                {"role": "user", "text": transcript}
             )
 
-        if chat["title"] == "New chat" and transcript.strip():
-            title = transcript.strip()
-            chat["title"] = title[:48] + ("..." if len(title) > 48 else "")
+            if response:
+                chat["messages"].append(
+                    {"role": "assistant", "text": response}
+                )
 
-        chat["updated_at"] = datetime.utcnow().isoformat()
-        self._save(chat)
+            if chat["title"] == "New chat" and transcript.strip():
+                title = transcript.strip()
+                chat["title"] = title[:48] + ("..." if len(title) > 48 else "")
+
+            chat["updated_at"] = datetime.utcnow().isoformat()
+            self._save_unlocked(chat)
+
         return chat
 
     def get_history(self, chat_id: str, limit: int = 5) -> list[dict]:
@@ -110,12 +135,26 @@ class ChatStore:
     def delete_chat(self, chat_id: str) -> bool:
         path = self._path(chat_id)
 
-        if not path.exists():
-            return False
+        with self._lock:
+            if not path.exists():
+                return False
 
-        path.unlink()
+            path.unlink()
+            tmp_path = path.with_suffix(".json.tmp")
+
+            if tmp_path.exists():
+                tmp_path.unlink()
+
         return True
 
     def _save(self, chat: dict) -> None:
-        with self._path(chat["id"]).open("w", encoding="utf-8") as handle:
-            json.dump(chat, handle, indent=2)
+        with self._lock:
+            self._save_unlocked(chat)
+
+    def _save_unlocked(self, chat: dict) -> None:
+        path = self._path(chat["id"])
+        tmp_path = path.with_suffix(".json.tmp")
+        payload = json.dumps(chat, indent=2)
+
+        tmp_path.write_text(payload, encoding="utf-8")
+        os.replace(tmp_path, path)

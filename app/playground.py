@@ -2,12 +2,17 @@ from contextlib import contextmanager
 import json
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel
 
 from app.config import SPOTIFY_CLIENT_ID
 from app.conversation.tts_jobs import get_tts_job
 from app.orchestrator.intelligence import IntelligenceOrchestrator
+from app.orchestrator.stream_pipeline import (
+    stream_ndjson_response,
+    stream_query,
+    stream_voice_query,
+)
 from app.tools.spotify_client import SpotifyClient, SpotifyApiError, SpotifyAuthRequired
 from app.utils.pipeline_log import (
     PipelineLogger,
@@ -783,6 +788,10 @@ let isProcessing = false;
 let activeChatId = null;
 let logsPinnedToBottom = true;
 let ttsInProgress = false;
+let ttsJobQueue = [];
+let ttsDrainRunning = false;
+let streamAssistantBubble = null;
+let streamBubbleIsHolding = false;
 let spotifyQueue = [];
 let spotifyIndex = 0;
 let spotifyAudio = null;
@@ -1435,11 +1444,226 @@ async function playGeminiAudio(data) {
 
   stopActiveAudio();
 
-  activeAudio = new Audio(
-    `data:${data.mime_type || "audio/wav"};base64,${data.audio_base64}`
-  );
+  return new Promise((resolve, reject) => {
+    activeAudio = new Audio(
+      `data:${data.mime_type || "audio/wav"};base64,${data.audio_base64}`
+    );
 
-  await activeAudio.play();
+    activeAudio.onended = () => resolve();
+    activeAudio.onerror = () => reject(new Error("Audio playback failed"));
+    activeAudio.play().catch(reject);
+  });
+}
+
+async function pollTtsJob(jobId) {
+  const maxAttempts = 150;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const result = await fetch(`/api/tts/${jobId}`);
+
+    if (result.status === 202) {
+      await new Promise(resolve => window.setTimeout(resolve, 120));
+      continue;
+    }
+
+    if (!result.ok) {
+      throw new Error(`TTS failed (${result.status})`);
+    }
+
+    return result.json();
+  }
+
+  throw new Error("Timed out waiting for voice response.");
+}
+
+async function drainTtsQueue() {
+  if (ttsDrainRunning) {
+    return;
+  }
+
+  ttsDrainRunning = true;
+  ttsInProgress = true;
+
+  try {
+    while (ttsJobQueue.length) {
+      const jobId = ttsJobQueue.shift();
+      status.innerText = "Speaking";
+      hint.innerText = "Playing voice response...";
+      const audioData = await pollTtsJob(jobId);
+      await playGeminiAudio(audioData);
+    }
+  } catch (error) {
+    appendLogs([{
+      step: "tts.error",
+      status: "error",
+      message: error.message || "Could not play voice response.",
+      timestamp: new Date().toISOString(),
+      details: {}
+    }]);
+  } finally {
+    ttsDrainRunning = false;
+    ttsInProgress = false;
+
+    if (!isProcessing) {
+      if (spotifyNowPlaying) {
+        status.innerText = "Playing music";
+      } else {
+        status.innerText = "Ready";
+        hint.innerText = "Type and press Send, or use Start / Stop for voice.";
+      }
+    }
+  }
+}
+
+function enqueueTtsJob(jobId) {
+  if (!jobId) return;
+  ttsJobQueue.push(jobId);
+  drainTtsQueue();
+}
+
+async function consumeNdjsonStream(response, onEvent) {
+  if (!response.ok) {
+    throw new Error(`Stream request failed (${response.status})`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+
+    if (done) {
+      break;
+    }
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\\n");
+    buffer = lines.pop() || "";
+
+    for (const line of lines) {
+      if (!line.trim()) {
+        continue;
+      }
+
+      await onEvent(JSON.parse(line));
+    }
+  }
+
+  if (buffer.trim()) {
+    await onEvent(JSON.parse(buffer));
+  }
+}
+
+async function runStreamQuery(transcript, chatId, profile, signal, options = {}) {
+  const isVoice = Boolean(options.voice);
+
+  const response = isVoice
+    ? await fetch("/api/voice-query/stream", {
+        method: "POST",
+        body: options.formData,
+        signal
+      })
+    : await fetch("/api/query/stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          transcript,
+          chat_id: chatId,
+          profile,
+          user_id: getUserId()
+        }),
+        signal
+      });
+
+  let finalData = null;
+  streamAssistantBubble = null;
+  streamBubbleIsHolding = false;
+  ttsJobQueue = [];
+
+  await consumeNdjsonStream(response, async event => {
+    if (event.type === "transcript") {
+      if (options.onTranscript) {
+        options.onTranscript(event.text);
+      }
+      return;
+    }
+
+    if (event.type === "intent") {
+      appendLogs([{
+        step: "intent.classify",
+        status: "completed",
+        message: `Intent classified as ${event.intent}`,
+        timestamp: new Date().toISOString(),
+        details: {
+          intent: event.intent,
+          needs_holding: event.needs_holding
+        }
+      }]);
+
+      if (event.needs_holding) {
+        status.innerText = "Searching";
+        hint.innerText = "Looking up the latest information...";
+        streamAssistantBubble = addMessage(
+          "assistant",
+          event.holding_response || "One moment, I'll check that for you."
+        );
+        streamBubbleIsHolding = true;
+      } else {
+        status.innerText = "Thinking";
+        streamAssistantBubble = addMessage("assistant", "");
+        streamBubbleIsHolding = false;
+      }
+      return;
+    }
+
+    if (event.type === "token") {
+      if (!streamAssistantBubble) {
+        streamAssistantBubble = addMessage("assistant", "");
+      }
+
+      if (streamBubbleIsHolding) {
+        streamAssistantBubble.innerText = event.text;
+        streamBubbleIsHolding = false;
+      } else {
+        streamAssistantBubble.innerText += event.text;
+      }
+      scrollChatToBottom();
+      return;
+    }
+
+    if (event.type === "tts") {
+      enqueueTtsJob(event.job_id);
+      return;
+    }
+
+    if (event.type === "spotify_playback") {
+      handleSpotifyPlayback(event.playback);
+      return;
+    }
+
+    if (event.type === "done") {
+      finalData = event;
+
+      if (streamAssistantBubble && !event.response) {
+        if (event.spotify_playback?.action === "play") {
+          streamAssistantBubble.closest(".message")?.remove();
+        } else {
+          streamAssistantBubble.innerText = "(No response returned)";
+        }
+      }
+
+      if (event.logs) {
+        appendLogs(event.logs);
+      }
+    }
+  });
+
+  if (!finalData) {
+    throw new Error("Stream ended before completion.");
+  }
+
+  return finalData;
 }
 
 async function ensureActiveChat() {
@@ -1795,6 +2019,9 @@ async function processQuery(transcript) {
   stopActiveAudio();
   await pauseSpotifyPlayback();
   activeHoldingBubble = null;
+  streamAssistantBubble = null;
+  streamBubbleIsHolding = false;
+  ttsJobQueue = [];
 
   if (!app.classList.contains("logs-open")) {
     app.classList.add("logs-open");
@@ -1813,19 +2040,12 @@ async function processQuery(transcript) {
     const chatId = await ensureActiveChat();
     addMessage("user", transcript);
 
-    const data = await runTextQueryWithHolding(
+    const data = await runStreamQuery(
       transcript,
       chatId,
       profile,
       signal
     );
-
-    appendLogs(data.logs);
-    showAssistantResponse(data);
-
-    if (data.response && !(data.spotify_playback?.action === "play")) {
-      playResponseTts(data, transcript);
-    }
 
     appendLogs([{
       step: "session.complete",
@@ -1849,13 +2069,15 @@ async function processQuery(transcript) {
       details: {}
     }]);
 
-    if (activeHoldingBubble) {
-      activeHoldingBubble.innerText = "Something went wrong while processing the query.";
+    if (streamAssistantBubble) {
+      streamAssistantBubble.innerText = "Something went wrong while processing the query.";
     } else {
       addMessage("assistant", "Something went wrong while processing the query.");
     }
   } finally {
     activeHoldingBubble = null;
+    streamAssistantBubble = null;
+    streamBubbleIsHolding = false;
     setComposerBusy(false);
     start.disabled = false;
     stop.disabled = true;
@@ -2015,19 +2237,31 @@ stop.onclick = async () => {
       abortController = new AbortController();
       const signal = abortController.signal;
 
-      const data = await runVoiceQueryWithHolding(
-        blob,
+      const form = new FormData();
+      form.append("audio", blob, "query.webm");
+      form.append("chat_id", chatId);
+      form.append("user_id", getUserId());
+      form.append("profile", JSON.stringify(profile));
+
+      streamAssistantBubble = null;
+      streamBubbleIsHolding = false;
+      ttsJobQueue = [];
+
+      const data = await runStreamQuery(
+        "",
         chatId,
         profile,
-        signal
+        signal,
+        {
+          voice: true,
+          formData: form,
+          onTranscript: text => {
+            addMessage("user", text);
+            status.innerText = "Thinking";
+            hint.innerText = "Generating response...";
+          }
+        }
       );
-
-      appendLogs(data.logs);
-      showAssistantResponse(data);
-
-      if (data.response && !(data.spotify_playback?.action === "play")) {
-        playResponseTts(data, data.transcript || "");
-      }
 
       appendLogs([{
         step: "session.complete",
@@ -2047,9 +2281,15 @@ stop.onclick = async () => {
           timestamp: new Date().toISOString(),
           details: {}
         }]);
+
+        if (streamAssistantBubble) {
+          streamAssistantBubble.innerText = "Something went wrong while processing the audio.";
+        }
       }
     } finally {
       activeHoldingBubble = null;
+      streamAssistantBubble = null;
+      streamBubbleIsHolding = false;
       setComposerBusy(false);
       if (!ttsInProgress) {
         if (spotifyNowPlaying) {
@@ -2212,6 +2452,53 @@ def spotify_disconnect():
 @app.get("/api/memory/status")
 def memory_status():
     return orchestrator.memory_status()
+
+
+@app.post("/api/query/stream")
+def query_stream(request: TranscriptRequest):
+    return StreamingResponse(
+        stream_ndjson_response(
+            stream_query(
+                orchestrator,
+                request.transcript,
+                chat_id=request.chat_id,
+                profile=_profile_payload(request.profile),
+                user_id=request.user_id,
+            )
+        ),
+        media_type="application/x-ndjson",
+    )
+
+
+@app.post("/api/voice-query/stream")
+async def voice_query_stream(
+    audio: UploadFile = File(...),
+    chat_id: str | None = Form(default=None),
+    user_id: str | None = Form(default=None),
+    profile: str | None = Form(default=None),
+):
+    audio_bytes = await audio.read()
+    profile_payload = None
+
+    if profile:
+        try:
+            profile_payload = json.loads(profile)
+        except json.JSONDecodeError:
+            profile_payload = None
+
+    return StreamingResponse(
+        stream_ndjson_response(
+            stream_voice_query(
+                orchestrator,
+                audio_bytes,
+                mime_type=audio.content_type or "audio/webm",
+                chat_id=chat_id,
+                user_id=user_id,
+                profile=profile_payload,
+            )
+        ),
+        media_type="application/x-ndjson",
+    )
 
 
 @app.post("/api/query")

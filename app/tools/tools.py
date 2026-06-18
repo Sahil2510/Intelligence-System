@@ -7,6 +7,7 @@ from app.conversation.responder import (
     classify_intent_with_llm,
     generate_response,
     generate_with_google_search,
+    stream_response,
 )
 from app.tools.spotify_client import SpotifyClient
 from app.utils.pipeline_log import pipeline_complete, pipeline_start
@@ -15,6 +16,39 @@ TOOLS_JSON = Path(__file__).parent / "tools.json"
 _spotify_client = SpotifyClient()
 
 VALID_INTENTS = {"normal", "web_search", "spotify"}
+
+_WEB_HINTS = (
+    "weather",
+    "forecast",
+    "temperature",
+    "mausam",
+    "news",
+    "score",
+    "stock",
+    "price",
+    "who is the",
+    "who is ",
+    "current president",
+    "current pm",
+    "today's",
+    "today ",
+    "latest ",
+    "live ",
+)
+
+_SPOTIFY_HINTS = (
+    "spotify",
+    "play ",
+    "pause",
+    "resume",
+    "skip",
+    "next song",
+    "previous song",
+    "gana",
+    "bajao",
+    "gaana",
+    "now playing",
+)
 
 
 @lru_cache
@@ -61,12 +95,56 @@ def _normalize_intent(raw_intent: str) -> str:
     return _load_config().get("default_intent", "normal")
 
 
+def classify_intent_fast(transcript: str) -> str | None:
+    cleaned = transcript.lower().strip()
+
+    if not cleaned:
+        return None
+
+    if "spotify" in cleaned:
+        return "spotify"
+
+    if any(hint in cleaned for hint in _SPOTIFY_HINTS):
+        if any(
+            word in cleaned
+            for word in (
+                "song",
+                "music",
+                "gana",
+                "gaana",
+                "artist",
+                "album",
+                "track",
+                "spotify",
+            )
+        ):
+            return "spotify"
+
+    if any(hint in cleaned for hint in _WEB_HINTS):
+        return "web_search"
+
+    return None
+
+
 def classify_intent(transcript: str) -> str:
     pipeline_start(
         "intent.classify",
-        "Classifying user intent with Gemini",
+        "Classifying user intent",
         {"transcript": transcript},
     )
+
+    fast_intent = classify_intent_fast(transcript)
+
+    if fast_intent:
+        pipeline_complete(
+            "intent.classify",
+            f"Intent classified as {fast_intent}",
+            {
+                "intent": fast_intent,
+                "method": "heuristic",
+            },
+        )
+        return fast_intent
 
     llm_intent = _normalize_intent(
         classify_intent_with_llm(transcript)
@@ -92,6 +170,105 @@ def should_show_holding(intent: str) -> bool:
             return tool.get("show_holding_response", False)
 
     return False
+
+
+def build_prompt_for_intent(
+    intent: str,
+    transcript: str,
+    history: list,
+    prompt_builder: PromptBuilder,
+    profile: dict | None = None,
+    ltm_memories: list | None = None,
+) -> tuple[str, bool]:
+    if intent == "web_search":
+        return (
+            prompt_builder.build_web_search(
+                transcript,
+                history,
+                profile=profile,
+                ltm_memories=ltm_memories,
+            ),
+            True,
+        )
+
+    return (
+        prompt_builder.build(
+            transcript,
+            history,
+            profile=profile,
+            ltm_memories=ltm_memories,
+        ),
+        False,
+    )
+
+
+def stream_tool_response(
+    intent: str,
+    transcript: str,
+    history: list,
+    prompt_builder: PromptBuilder,
+    profile: dict | None = None,
+    ltm_memories: list | None = None,
+):
+    if intent == "web_search":
+        pipeline_start(
+            "llm.web_search",
+            "Streaming web-search response with Google Search grounding",
+            {"model": "gemini-2.5-flash"},
+        )
+        prompt, use_search = build_prompt_for_intent(
+            intent,
+            transcript,
+            history,
+            prompt_builder,
+            profile=profile,
+            ltm_memories=ltm_memories,
+        )
+        yield from stream_response(prompt, use_google_search=use_search)
+        pipeline_complete(
+            "llm.web_search",
+            "Web search response stream completed",
+            {},
+        )
+        return
+
+    if intent == "spotify":
+        outcome = _spotify_client.handle_user_request(transcript)
+        playback = outcome.get("playback")
+
+        if (playback or {}).get("action") == "play":
+            return
+
+        prompt = prompt_builder.build_with_tool_result(
+            transcript=transcript,
+            history=history,
+            tool_name="spotify",
+            tool_result=outcome["message"],
+            profile=profile,
+            ltm_memories=ltm_memories,
+        )
+        yield from stream_response(prompt)
+        return
+
+    pipeline_start(
+        "llm.response",
+        "Streaming response with Langfuse system prompt",
+        {"model": "gemini-2.5-flash"},
+    )
+    prompt, _ = build_prompt_for_intent(
+        intent,
+        transcript,
+        history,
+        prompt_builder,
+        profile=profile,
+        ltm_memories=ltm_memories,
+    )
+    yield from stream_response(prompt)
+    pipeline_complete(
+        "llm.response",
+        "System prompt response stream completed",
+        {},
+    )
 
 
 def execute_tool(

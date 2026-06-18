@@ -58,6 +58,61 @@ def _extract_text(response) -> str:
     raise ValueError("Gemini returned no text content")
 
 
+def _iter_stream_text(response) -> str:
+    if response.text:
+        yield response.text
+        return
+
+    for candidate in response.candidates or []:
+        content = candidate.content
+        if not content:
+            continue
+
+        for part in content.parts or []:
+            if part.text:
+                yield part.text
+
+
+def stream_response(prompt: str, *, use_google_search: bool = False):
+    config = None
+
+    if use_google_search:
+        config = types.GenerateContentConfig(
+            tools=[
+                types.Tool(
+                    google_search=types.GoogleSearch()
+                )
+            ]
+        )
+
+    pipeline_start(
+        "llm.stream",
+        "Streaming response with Gemini",
+        {
+            "model": MODEL,
+            "google_search": use_google_search,
+        },
+    )
+
+    for chunk in client.models.generate_content_stream(
+        model=MODEL,
+        contents=prompt,
+        config=config,
+    ):
+        if chunk.text:
+            yield chunk.text
+            continue
+
+        for text in _iter_stream_text(chunk):
+            yield text
+
+    pipeline_complete(
+        "llm.stream",
+        "Gemini response stream completed",
+        {"google_search": use_google_search},
+    )
+
+
 def generate_response(prompt: str) -> str:
     response = client.models.generate_content(
         model=MODEL,

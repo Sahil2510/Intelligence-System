@@ -82,7 +82,12 @@ def set_pipeline_logger(pipeline_logger: PipelineLogger):
 
 
 def reset_pipeline_logger(token) -> None:
-    _pipeline_logger.reset(token)
+    try:
+        _pipeline_logger.reset(token)
+    except ValueError:
+        # Starlette runs sync streaming generators in a thread pool; the token
+        # may be created in a different context than __exit__/finally cleanup.
+        _pipeline_logger.set(None)
 
 
 def get_pipeline_logger() -> PipelineLogger | None:
