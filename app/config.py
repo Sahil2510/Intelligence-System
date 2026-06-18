@@ -43,3 +43,8 @@ STM_HISTORY_TURN_LIMIT = int(os.getenv("STM_HISTORY_TURN_LIMIT", "5"))
 MEM0_API_KEY = os.getenv("MEM0_API_KEY")
 MEM0_SEARCH_LIMIT = int(os.getenv("MEM0_SEARCH_LIMIT", "5"))
 DEFAULT_USER_ID = os.getenv("DEFAULT_USER_ID", "playground-default")
+
+# browser = instant Web Speech API synced to streamed text (playground default)
+# gemini = server-side Gemini TTS (higher quality, 3-5s latency per chunk)
+STREAM_TTS_MODE = os.getenv("STREAM_TTS_MODE", "browser").strip().lower()
+STREAM_GEMINI_TTS = STREAM_TTS_MODE == "gemini"

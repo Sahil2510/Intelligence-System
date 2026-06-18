@@ -5,6 +5,7 @@ import wave
 from google import genai
 from google.genai import types
 
+from app.conversation.language import detect_speech_locale
 from app.config import (
     GEMINI_API_KEY,
     GEMINI_TTS_MODEL,
@@ -210,13 +211,18 @@ def _pcm_to_wav_bytes(
 
 
 def _speech_instruction(text: str, language_hint: str | None = None) -> str:
+    locale = detect_speech_locale(text)
+
     if language_hint:
         return (
-            f"Speak naturally in {language_hint}. "
+            f"Speak naturally in {language_hint} with a clear Indian accent. "
             f"Use a warm conversational tone:\n{text}"
         )
 
-    return f"Speak naturally in the same language as this text:\n{text}"
+    return (
+        f"Speak naturally with a clear Indian accent. "
+        f"Use locale {locale} pronunciation where appropriate:\n{text}"
+    )
 
 
 def generate_speech(

@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import json
-from concurrent.futures import ThreadPoolExecutor
+import time
+from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any, Iterator
 
-from app.conversation.sentence_buffer import SentenceBuffer
+from app.conversation.language import detect_speech_locale
+from app.config import STREAM_GEMINI_TTS
+from app.conversation.language import detect_language_hint
+from app.conversation.responder import generate_speech
+from app.conversation.sentence_buffer import SpeakBuffer
 from app.conversation.transcriber import transcribe_audio_bytes
-from app.conversation.tts_jobs import start_tts_job
 from app.tools.tools import (
     classify_intent,
     run_spotify_query,
@@ -24,6 +28,7 @@ from app.utils.pipeline_log import (
 FAST_HOLDING_RESPONSE = "One moment, I'll check that for you."
 
 _memory_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="memory")
+_tts_stream_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="tts-stream")
 
 
 def _load_context_parallel(orchestrator, chat_id, user_id, transcript):
@@ -51,24 +56,74 @@ def _schedule_memory_save(orchestrator, **kwargs) -> None:
     )
 
 
-def _emit_tts_for_sentences(
-    sentences: list[str],
+def _start_tts_future(sentence: str, transcript: str) -> Future:
+    language_hint = detect_language_hint(transcript, sentence)
+    return _tts_stream_executor.submit(
+        generate_speech,
+        sentence,
+        language_hint,
+    )
+
+
+def _queue_tts_chunk(
+    pending: list[tuple[int, Future]],
+    index: int,
+    sentence: str,
+    transcript: str,
+) -> int:
+    cleaned = sentence.strip()
+
+    if not cleaned:
+        return index
+
+    pending.append((index, _start_tts_future(cleaned, transcript)))
+    return index + 1
+
+
+def _yield_ready_tts(pending: list[tuple[int, Future]]) -> Iterator[dict[str, Any]]:
+    pending.sort(key=lambda item: item[0])
+
+    while pending and pending[0][1].done():
+        sentence_index, future = pending.pop(0)
+
+        try:
+            audio = future.result()
+            yield {
+                "type": "tts_audio",
+                "sentence_index": sentence_index,
+                "audio_base64": audio["audio_base64"],
+                "mime_type": audio["mime_type"],
+            }
+        except Exception as exc:
+            yield {
+                "type": "tts_error",
+                "sentence_index": sentence_index,
+                "message": str(exc),
+            }
+
+
+def _flush_pending_tts(pending: list[tuple[int, Future]]) -> Iterator[dict[str, Any]]:
+    while pending:
+        before = len(pending)
+        yield from _yield_ready_tts(pending)
+
+        if len(pending) == before and pending:
+            time.sleep(0.02)
+
+
+def _queue_speakable_chunks(
+    pending_tts: list[tuple[int, Future]],
+    chunks: list[str],
     *,
     transcript: str,
     start_index: int,
-) -> Iterator[dict[str, Any]]:
-    for offset, sentence in enumerate(sentences):
-        job_id = start_tts_job(sentence, transcript=transcript)
+) -> int:
+    index = start_index
 
-        if not job_id:
-            continue
+    for chunk in chunks:
+        index = _queue_tts_chunk(pending_tts, index, chunk, transcript)
 
-        yield {
-            "type": "tts",
-            "job_id": job_id,
-            "sentence_index": start_index + offset,
-            "text_preview": sentence[:120],
-        }
+    return index
 
 
 def stream_query(
@@ -107,13 +162,15 @@ def stream_query(
             if should_show_holding(intent)
             else None
         ),
+        "speech_lang": detect_speech_locale(transcript),
     }
 
     spotify_playback = None
     response_parts: list[str] = []
-    sentence_buffer = SentenceBuffer()
+    speak_buffer = SpeakBuffer()
+    pending_tts: list[tuple[int, Future]] = []
     tts_sentence_index = 0
-    skip_tts = False
+    skip_tts = not STREAM_GEMINI_TTS
 
     if intent == "spotify":
         response, spotify_playback = run_spotify_query(
@@ -140,13 +197,13 @@ def stream_query(
             yield {"type": "token", "text": response}
 
             if not skip_tts:
-                for event in _emit_tts_for_sentences(
+                tts_sentence_index = _queue_speakable_chunks(
+                    pending_tts,
                     [response],
                     transcript=transcript,
                     start_index=tts_sentence_index,
-                ):
-                    tts_sentence_index += 1
-                    yield event
+                )
+                yield from _flush_pending_tts(pending_tts)
     else:
         for token in stream_tool_response(
             intent,
@@ -159,28 +216,28 @@ def stream_query(
             response_parts.append(token)
             yield {"type": "token", "text": token}
 
-            for sentence in sentence_buffer.push(token):
-                if skip_tts:
-                    continue
+            if skip_tts:
+                continue
 
-                for event in _emit_tts_for_sentences(
-                    [sentence],
-                    transcript=transcript,
-                    start_index=tts_sentence_index,
-                ):
-                    tts_sentence_index += 1
-                    yield event
+            tts_sentence_index = _queue_speakable_chunks(
+                pending_tts,
+                speak_buffer.push(token),
+                transcript=transcript,
+                start_index=tts_sentence_index,
+            )
+            yield from _yield_ready_tts(pending_tts)
 
-        remainder = sentence_buffer.flush()
+        remainder = speak_buffer.flush()
 
         if remainder and not skip_tts:
-            for event in _emit_tts_for_sentences(
+            tts_sentence_index = _queue_speakable_chunks(
+                pending_tts,
                 [remainder],
                 transcript=transcript,
                 start_index=tts_sentence_index,
-            ):
-                tts_sentence_index += 1
-                yield event
+            )
+
+        yield from _flush_pending_tts(pending_tts)
 
     full_response = "".join(response_parts)
 
@@ -240,6 +297,7 @@ def stream_voice_query(
     yield {
         "type": "transcript",
         "text": transcript,
+        "speech_lang": detect_speech_locale(transcript),
     }
 
     yield from stream_query(

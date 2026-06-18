@@ -1,6 +1,5 @@
 import re
 
-
 LANGUAGE_HINTS = (
     (re.compile(r"[\u0900-\u097F]"), "Hindi"),
     (re.compile(r"[\u0980-\u09FF]"), "Bengali"),
@@ -14,6 +13,22 @@ LANGUAGE_HINTS = (
     (re.compile(r"[\u0600-\u06FF]"), "Urdu"),
 )
 
+# Indian BCP-47 locales for browser / TTS voice selection
+LANGUAGE_LOCALES = {
+    "Hindi": "hi-IN",
+    "Bengali": "bn-IN",
+    "Gujarati": "gu-IN",
+    "Punjabi": "pa-IN",
+    "Tamil": "ta-IN",
+    "Telugu": "te-IN",
+    "Kannada": "kn-IN",
+    "Malayalam": "ml-IN",
+    "Odia": "or-IN",
+    "Urdu": "ur-IN",
+}
+
+DEFAULT_SPEECH_LOCALE = "en-IN"
+
 
 def detect_language_hint(*texts: str) -> str | None:
     for text in texts:
@@ -25,3 +40,12 @@ def detect_language_hint(*texts: str) -> str | None:
                 return language
 
     return None
+
+
+def detect_speech_locale(*texts: str) -> str:
+    language = detect_language_hint(*texts)
+
+    if language:
+        return LANGUAGE_LOCALES.get(language, DEFAULT_SPEECH_LOCALE)
+
+    return DEFAULT_SPEECH_LOCALE

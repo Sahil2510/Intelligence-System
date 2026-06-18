@@ -5,7 +5,7 @@ from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel
 
-from app.config import SPOTIFY_CLIENT_ID
+from app.config import SPOTIFY_CLIENT_ID, STREAM_TTS_MODE
 from app.conversation.tts_jobs import get_tts_job
 from app.orchestrator.intelligence import IntelligenceOrchestrator
 from app.orchestrator.stream_pipeline import (
@@ -75,7 +75,7 @@ def pipeline_session():
 
 @app.get("/", response_class=HTMLResponse)
 def home():
-    return PLAYGROUND_HTML
+    return PLAYGROUND_HTML.replace("__STREAM_TTS_MODE__", STREAM_TTS_MODE)
 
 
 PLAYGROUND_HTML = """
@@ -778,6 +778,9 @@ PLAYGROUND_HTML = """
   </div>
 
 <script>
+const STREAM_TTS_MODE = "__STREAM_TTS_MODE__";
+const USE_BROWSER_TTS = STREAM_TTS_MODE === "browser";
+
 let recorder;
 let chunks = [];
 let mediaStream = null;
@@ -789,6 +792,10 @@ let activeChatId = null;
 let logsPinnedToBottom = true;
 let ttsInProgress = false;
 let ttsJobQueue = [];
+let ttsPrefetch = new Map();
+let ttsAudioQueue = [];
+let ttsNextSentenceIndex = 0;
+let ttsAudioDrainRunning = false;
 let ttsDrainRunning = false;
 let streamAssistantBubble = null;
 let streamBubbleIsHolding = false;
@@ -862,11 +869,245 @@ function scrollLogsToBottom(force = false) {
 }
 
 function stopActiveAudio() {
+  stopBrowserSpeech();
+
   if (activeAudio) {
     activeAudio.pause();
     activeAudio.currentTime = 0;
     activeAudio.src = "";
     activeAudio = null;
+  }
+}
+
+let speechBufferText = "";
+let activeSpeechLang = "en-IN";
+let cachedSpeechVoices = [];
+
+const INDIAN_LANGUAGE_SCRIPTS = [
+  { pattern: /[\u0900-\u097F]/, lang: "hi-IN" },
+  { pattern: /[\u0980-\u09FF]/, lang: "bn-IN" },
+  { pattern: /[\u0A80-\u0AFF]/, lang: "gu-IN" },
+  { pattern: /[\u0A00-\u0A7F]/, lang: "pa-IN" },
+  { pattern: /[\u0B80-\u0BFF]/, lang: "ta-IN" },
+  { pattern: /[\u0C00-\u0C7F]/, lang: "te-IN" },
+  { pattern: /[\u0C80-\u0CFF]/, lang: "kn-IN" },
+  { pattern: /[\u0D00-\u0D7F]/, lang: "ml-IN" },
+  { pattern: /[\u0B00-\u0B7F]/, lang: "or-IN" },
+  { pattern: /[\u0600-\u06FF]/, lang: "ur-IN" }
+];
+
+function normalizeLangCode(code) {
+  return (code || "en-IN").replace("_", "-").toLowerCase();
+}
+
+function detectSpeechLang(...texts) {
+  for (const text of texts) {
+    if (!text) {
+      continue;
+    }
+
+    for (const item of INDIAN_LANGUAGE_SCRIPTS) {
+      if (item.pattern.test(text)) {
+        return item.lang;
+      }
+    }
+  }
+
+  return activeSpeechLang || "en-IN";
+}
+
+function cacheSpeechVoices() {
+  if (!window.speechSynthesis) {
+    return;
+  }
+
+  cachedSpeechVoices = window.speechSynthesis.getVoices() || [];
+}
+
+function pickIndianVoice(langCode) {
+  cacheSpeechVoices();
+
+  const voices = cachedSpeechVoices;
+  if (!voices.length) {
+    return null;
+  }
+
+  const target = normalizeLangCode(langCode);
+  const base = target.split("-")[0];
+
+  const exact = voices.find(voice => normalizeLangCode(voice.lang) === target);
+  if (exact) {
+    return exact;
+  }
+
+  const regional = voices.filter(voice => {
+    const lang = normalizeLangCode(voice.lang);
+    return lang.startsWith(`${base}-in`);
+  });
+
+  if (regional.length) {
+    return regional.find(voice => voice.localService) || regional[0];
+  }
+
+  const anyIndian = voices.filter(voice => normalizeLangCode(voice.lang).endsWith("-in"));
+  if (anyIndian.length) {
+    if (base === "en") {
+      const englishIndia = anyIndian.find(voice => normalizeLangCode(voice.lang).startsWith("en-"));
+      if (englishIndia) {
+        return englishIndia;
+      }
+    }
+
+    return anyIndian.find(voice => voice.localService) || anyIndian[0];
+  }
+
+  return null;
+}
+
+function setSpeechContext(transcript, langCode) {
+  if (langCode) {
+    activeSpeechLang = langCode;
+    return;
+  }
+
+  activeSpeechLang = detectSpeechLang(transcript);
+}
+
+function resetSpeechBuffer() {
+  speechBufferText = "";
+}
+
+function stopBrowserSpeech() {
+  resetSpeechBuffer();
+
+  if (window.speechSynthesis) {
+    window.speechSynthesis.cancel();
+  }
+}
+
+function speakBrowserChunk(text) {
+  if (!USE_BROWSER_TTS || !window.speechSynthesis) {
+    return;
+  }
+
+  const cleaned = text.trim();
+  if (!cleaned) {
+    return;
+  }
+
+  cacheSpeechVoices();
+
+  const langCode = detectSpeechLang(cleaned, speechBufferText, activeSpeechLang);
+  activeSpeechLang = langCode;
+  const voice = pickIndianVoice(langCode);
+
+  ttsInProgress = true;
+  status.innerText = "Speaking";
+  hint.innerText = "Playing voice response...";
+
+  const utterance = new SpeechSynthesisUtterance(cleaned);
+  utterance.lang = langCode;
+  if (voice) {
+    utterance.voice = voice;
+  }
+  utterance.rate = 1.05;
+  utterance.onend = () => {
+    if (!window.speechSynthesis.speaking && !window.speechSynthesis.pending) {
+      updateTtsIdleStatus();
+    }
+  };
+  utterance.onerror = () => {
+    updateTtsIdleStatus();
+  };
+
+  window.speechSynthesis.speak(utterance);
+}
+
+function extractSpeechChunks() {
+  const chunks = [];
+  const minChars = 10;
+  const maxChars = 72;
+  const sentenceEnd = /(?<=[.!?।\\n])\\s+/;
+
+  while (speechBufferText) {
+    const parts = speechBufferText.split(sentenceEnd);
+
+    if (parts.length > 1 && parts[0].trim()) {
+      chunks.push(parts[0].trim());
+      speechBufferText = parts.slice(1).join(" ");
+      continue;
+    }
+
+    const stripped = speechBufferText.trimStart();
+    if (!stripped) {
+      speechBufferText = "";
+      break;
+    }
+
+    if (stripped.length >= maxChars) {
+      let splitAt = stripped.lastIndexOf(" ", maxChars);
+      if (splitAt < minChars) {
+        splitAt = maxChars;
+      }
+      chunks.push(stripped.slice(0, splitAt).trim());
+      speechBufferText = stripped.slice(splitAt).trimStart();
+      continue;
+    }
+
+    let boundary = null;
+    for (const marker of [".", "?", "!", "।", "\\n", ",", ";", ":"]) {
+      const idx = stripped.indexOf(marker);
+      if (idx !== -1) {
+        const end = idx + 1;
+        if (boundary === null || end < boundary) {
+          boundary = end;
+        }
+      }
+    }
+
+    if (boundary !== null && boundary >= minChars) {
+      chunks.push(stripped.slice(0, boundary).trim());
+      speechBufferText = stripped.slice(boundary).trimStart();
+      continue;
+    }
+
+    if (stripped.length >= minChars) {
+      const spaceAt = stripped.indexOf(" ", minChars);
+      if (spaceAt !== -1) {
+        chunks.push(stripped.slice(0, spaceAt).trim());
+        speechBufferText = stripped.slice(spaceAt).trimStart();
+        continue;
+      }
+    }
+
+    break;
+  }
+
+  return chunks;
+}
+
+function pushSpeechToken(text) {
+  if (!USE_BROWSER_TTS || !text) {
+    return;
+  }
+
+  speechBufferText += text;
+
+  for (const chunk of extractSpeechChunks()) {
+    speakBrowserChunk(chunk);
+  }
+}
+
+function flushSpeechBuffer() {
+  if (!USE_BROWSER_TTS) {
+    return;
+  }
+
+  const remainder = speechBufferText.trim();
+  resetSpeechBuffer();
+
+  if (remainder) {
+    speakBrowserChunk(remainder);
   }
 }
 
@@ -1462,7 +1703,7 @@ async function pollTtsJob(jobId) {
     const result = await fetch(`/api/tts/${jobId}`);
 
     if (result.status === 202) {
-      await new Promise(resolve => window.setTimeout(resolve, 120));
+      await new Promise(resolve => window.setTimeout(resolve, attempt < 5 ? 40 : 80));
       continue;
     }
 
@@ -1474,6 +1715,100 @@ async function pollTtsJob(jobId) {
   }
 
   throw new Error("Timed out waiting for voice response.");
+}
+
+function prefetchTtsJob(jobId) {
+  if (!jobId || ttsPrefetch.has(jobId)) {
+    return ttsPrefetch.get(jobId);
+  }
+
+  const promise = pollTtsJob(jobId).catch(error => {
+    ttsPrefetch.delete(jobId);
+    throw error;
+  });
+
+  ttsPrefetch.set(jobId, promise);
+  return promise;
+}
+
+function resetTtsPlayback() {
+  ttsJobQueue = [];
+  ttsPrefetch.clear();
+  ttsAudioQueue = [];
+  ttsNextSentenceIndex = 0;
+  activeSpeechLang = "en-IN";
+  stopBrowserSpeech();
+}
+
+function updateTtsIdleStatus() {
+  if (isProcessing || ttsJobQueue.length || ttsAudioQueue.length || ttsPrefetch.size) {
+    return;
+  }
+
+  if (
+    USE_BROWSER_TTS &&
+    window.speechSynthesis &&
+    (window.speechSynthesis.speaking || window.speechSynthesis.pending)
+  ) {
+    return;
+  }
+
+  ttsInProgress = false;
+
+  if (spotifyNowPlaying) {
+    status.innerText = "Playing music";
+  } else {
+    status.innerText = "Ready";
+    hint.innerText = "Type and press Send, or use Start / Stop for voice.";
+  }
+}
+
+async function drainTtsAudioQueue() {
+  if (ttsAudioDrainRunning) {
+    return;
+  }
+
+  ttsAudioDrainRunning = true;
+  ttsInProgress = true;
+
+  try {
+    ttsAudioQueue.sort((left, right) => left.sentence_index - right.sentence_index);
+
+    while (
+      ttsAudioQueue.length &&
+      ttsAudioQueue[0].sentence_index === ttsNextSentenceIndex
+    ) {
+      const event = ttsAudioQueue.shift();
+      status.innerText = "Speaking";
+      hint.innerText = "Playing voice response...";
+      await playGeminiAudio(event);
+      ttsNextSentenceIndex += 1;
+    }
+  } catch (error) {
+    appendLogs([{
+      step: "tts.error",
+      status: "error",
+      message: error.message || "Could not play voice response.",
+      timestamp: new Date().toISOString(),
+      details: {}
+    }]);
+  } finally {
+    ttsAudioDrainRunning = false;
+    updateTtsIdleStatus();
+
+    if (ttsAudioQueue.length) {
+      drainTtsAudioQueue();
+    }
+  }
+}
+
+function enqueueTtsAudio(event) {
+  if (!event?.audio_base64) {
+    return;
+  }
+
+  ttsAudioQueue.push(event);
+  drainTtsAudioQueue();
 }
 
 async function drainTtsQueue() {
@@ -1489,8 +1824,9 @@ async function drainTtsQueue() {
       const jobId = ttsJobQueue.shift();
       status.innerText = "Speaking";
       hint.innerText = "Playing voice response...";
-      const audioData = await pollTtsJob(jobId);
+      const audioData = await prefetchTtsJob(jobId);
       await playGeminiAudio(audioData);
+      ttsPrefetch.delete(jobId);
     }
   } catch (error) {
     appendLogs([{
@@ -1502,22 +1838,14 @@ async function drainTtsQueue() {
     }]);
   } finally {
     ttsDrainRunning = false;
-    ttsInProgress = false;
-
-    if (!isProcessing) {
-      if (spotifyNowPlaying) {
-        status.innerText = "Playing music";
-      } else {
-        status.innerText = "Ready";
-        hint.innerText = "Type and press Send, or use Start / Stop for voice.";
-      }
-    }
+    updateTtsIdleStatus();
   }
 }
 
 function enqueueTtsJob(jobId) {
   if (!jobId) return;
   ttsJobQueue.push(jobId);
+  prefetchTtsJob(jobId);
   drainTtsQueue();
 }
 
@@ -1579,10 +1907,13 @@ async function runStreamQuery(transcript, chatId, profile, signal, options = {})
   let finalData = null;
   streamAssistantBubble = null;
   streamBubbleIsHolding = false;
-  ttsJobQueue = [];
+  resetTtsPlayback();
 
   await consumeNdjsonStream(response, async event => {
     if (event.type === "transcript") {
+      if (event.text) {
+        setSpeechContext(event.text, event.speech_lang);
+      }
       if (options.onTranscript) {
         options.onTranscript(event.text);
       }
@@ -1590,6 +1921,9 @@ async function runStreamQuery(transcript, chatId, profile, signal, options = {})
     }
 
     if (event.type === "intent") {
+      if (event.speech_lang) {
+        setSpeechContext("", event.speech_lang);
+      }
       appendLogs([{
         step: "intent.classify",
         status: "completed",
@@ -1629,6 +1963,16 @@ async function runStreamQuery(transcript, chatId, profile, signal, options = {})
         streamAssistantBubble.innerText += event.text;
       }
       scrollChatToBottom();
+      if (USE_BROWSER_TTS) {
+        pushSpeechToken(event.text);
+      }
+      return;
+    }
+
+    if (event.type === "tts_audio") {
+      if (!USE_BROWSER_TTS) {
+        enqueueTtsAudio(event);
+      }
       return;
     }
 
@@ -1661,6 +2005,10 @@ async function runStreamQuery(transcript, chatId, profile, signal, options = {})
 
   if (!finalData) {
     throw new Error("Stream ended before completion.");
+  }
+
+  if (USE_BROWSER_TTS) {
+    flushSpeechBuffer();
   }
 
   return finalData;
@@ -2021,7 +2369,8 @@ async function processQuery(transcript) {
   activeHoldingBubble = null;
   streamAssistantBubble = null;
   streamBubbleIsHolding = false;
-  ttsJobQueue = [];
+  resetTtsPlayback();
+  setSpeechContext(transcript);
 
   if (!app.classList.contains("logs-open")) {
     app.classList.add("logs-open");
@@ -2245,7 +2594,7 @@ stop.onclick = async () => {
 
       streamAssistantBubble = null;
       streamBubbleIsHolding = false;
-      ttsJobQueue = [];
+      resetTtsPlayback();
 
       const data = await runStreamQuery(
         "",
@@ -2305,6 +2654,10 @@ stop.onclick = async () => {
 };
 
 loadProfile();
+if (window.speechSynthesis) {
+  window.speechSynthesis.addEventListener("voiceschanged", cacheSpeechVoices);
+  cacheSpeechVoices();
+}
 loadChats().then(async () => {
   const result = await fetch("/api/chats");
   const chats = await result.json();
