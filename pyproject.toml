@@ -15,4 +15,4 @@ luvio = "app.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["app*"]
+include = ["app*", "ai_notes*"]

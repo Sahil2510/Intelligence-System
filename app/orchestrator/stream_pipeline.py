@@ -212,6 +212,7 @@ def stream_query(
             orchestrator.prompt_builder,
             profile=profile,
             ltm_memories=ltm_memories,
+            user_id=resolved_user_id,
         ):
             response_parts.append(token)
             yield {"type": "token", "text": token}

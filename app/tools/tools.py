@@ -11,11 +11,12 @@ from app.conversation.responder import (
 )
 from app.tools.spotify_client import SpotifyClient
 from app.utils.pipeline_log import pipeline_complete, pipeline_start
+from ai_notes.pipeline.retrieval_handler import stream_meeting_notes_response
 
 TOOLS_JSON = Path(__file__).parent / "tools.json"
 _spotify_client = SpotifyClient()
 
-VALID_INTENTS = {"normal", "web_search", "spotify"}
+VALID_INTENTS = {"normal", "web_search", "spotify", "meeting_notes"}
 
 _WEB_HINTS = (
     "weather",
@@ -50,6 +51,21 @@ _SPOTIFY_HINTS = (
     "now playing",
 )
 
+_MEETING_NOTES_HINTS = (
+    "meeting notes",
+    "last meeting",
+    "latest meeting",
+    "recent meeting",
+    "action items",
+    "pending tasks",
+    "completed tasks",
+    "what happened in the meeting",
+    "what did we discuss",
+    "what was discussed",
+    "meeting summary",
+    "my meetings",
+)
+
 
 @lru_cache
 def _load_config() -> dict:
@@ -78,6 +94,9 @@ def _normalize_intent(raw_intent: str) -> str:
         "web": "web_search",
         "search": "web_search",
         "google_search": "web_search",
+        "meetingnotes": "meeting_notes",
+        "meeting": "meeting_notes",
+        "notes": "meeting_notes",
     }
 
     if cleaned in aliases:
@@ -103,6 +122,9 @@ def classify_intent_fast(transcript: str) -> str | None:
 
     if "spotify" in cleaned:
         return "spotify"
+
+    if any(hint in cleaned for hint in _MEETING_NOTES_HINTS):
+        return "meeting_notes"
 
     if any(hint in cleaned for hint in _SPOTIFY_HINTS):
         if any(
@@ -209,6 +231,7 @@ def stream_tool_response(
     prompt_builder: PromptBuilder,
     profile: dict | None = None,
     ltm_memories: list | None = None,
+    user_id: str | None = None,
 ):
     if intent == "web_search":
         pipeline_start(
@@ -250,6 +273,27 @@ def stream_tool_response(
         yield from stream_response(prompt)
         return
 
+    if intent == "meeting_notes":
+        pipeline_start(
+            "ai-notes.retrieval",
+            "Streaming meeting notes retrieval response",
+            {"model": "gemini-2.5-flash"},
+        )
+        from app.config import DEFAULT_USER_ID
+
+        resolved_user_id = (user_id or DEFAULT_USER_ID).strip() or DEFAULT_USER_ID
+
+        yield from stream_meeting_notes_response(
+            transcript,
+            user_id=resolved_user_id,
+        )
+        pipeline_complete(
+            "ai-notes.retrieval",
+            "Meeting notes retrieval stream completed",
+            {},
+        )
+        return
+
     pipeline_start(
         "llm.response",
         "Streaming response with Langfuse system prompt",
@@ -278,6 +322,7 @@ def execute_tool(
     prompt_builder: PromptBuilder,
     profile: dict | None = None,
     ltm_memories: list | None = None,
+    user_id: str | None = None,
 ) -> str:
     if intent == "web_search":
         pipeline_start(
@@ -316,6 +361,18 @@ def execute_tool(
             {"response_length": len(response)},
         )
         return response
+
+    if intent == "meeting_notes":
+        from app.config import DEFAULT_USER_ID
+
+        resolved_user_id = (user_id or DEFAULT_USER_ID).strip() or DEFAULT_USER_ID
+        parts = list(
+            stream_meeting_notes_response(
+                transcript,
+                user_id=resolved_user_id,
+            )
+        )
+        return "".join(parts)
 
     pipeline_start(
         "llm.response",

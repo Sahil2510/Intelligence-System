@@ -5,7 +5,8 @@ from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel
 
-from app.config import SPOTIFY_CLIENT_ID, STREAM_TTS_MODE
+from app.config import AI_NOTES_CHUNK_INTERVAL_SECONDS, SPOTIFY_CLIENT_ID, STREAM_TTS_MODE
+from ai_notes.api.router import router as ai_notes_router
 from app.conversation.tts_jobs import get_tts_job
 from app.orchestrator.intelligence import IntelligenceOrchestrator
 from app.orchestrator.stream_pipeline import (
@@ -22,6 +23,7 @@ from app.utils.pipeline_log import (
 
 
 app = FastAPI()
+app.include_router(ai_notes_router)
 orchestrator = IntelligenceOrchestrator()
 spotify_client = SpotifyClient()
 
@@ -75,7 +77,13 @@ def pipeline_session():
 
 @app.get("/", response_class=HTMLResponse)
 def home():
-    return PLAYGROUND_HTML.replace("__STREAM_TTS_MODE__", STREAM_TTS_MODE)
+    return (
+        PLAYGROUND_HTML.replace("__STREAM_TTS_MODE__", STREAM_TTS_MODE)
+        .replace(
+            "__AI_NOTES_CHUNK_INTERVAL__",
+            str(AI_NOTES_CHUNK_INTERVAL_SECONDS),
+        )
+    )
 
 
 PLAYGROUND_HTML = """
@@ -540,6 +548,44 @@ PLAYGROUND_HTML = """
       padding-left: 4px;
     }
 
+    .meeting-banner {
+      display: none;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      border-radius: 8px;
+      background: #fff7ed;
+      border: 1px solid #fdba74;
+      color: #9a3412;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .meeting-banner.active {
+      display: flex;
+    }
+
+    .meeting-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      background: #ef4444;
+      animation: pulse 1.2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.35; }
+    }
+
+    button.meeting-active {
+      background: #ea580c;
+    }
+
+    button.meeting-active:hover {
+      background: #c2410c;
+    }
+
     button {
       min-width: 42px;
       min-height: 42px;
@@ -722,8 +768,14 @@ PLAYGROUND_HTML = """
             rows="1"
             placeholder="Type your message..."
           ></textarea>
+          <div class="meeting-banner" id="meetingBanner">
+            <span class="meeting-dot"></span>
+            <span id="meetingBannerText">Recording meeting notes...</span>
+          </div>
           <div class="composer-row">
             <div class="hint" id="hint">Type and press Send, or use Start / Stop for voice.</div>
+            <button type="button" class="secondary meeting-active" id="meetingStart">Meeting</button>
+            <button type="button" class="secondary" id="meetingEnd" disabled>End Meeting</button>
             <button type="button" class="secondary" id="sendText">Send</button>
             <button type="button" class="secondary" id="start">Start</button>
             <button type="button" id="stop" disabled>Stop</button>
@@ -780,10 +832,16 @@ PLAYGROUND_HTML = """
 <script>
 const STREAM_TTS_MODE = "__STREAM_TTS_MODE__";
 const USE_BROWSER_TTS = STREAM_TTS_MODE === "browser";
+const MEETING_CHUNK_MS = Number("__AI_NOTES_CHUNK_INTERVAL__") * 1000;
 
 let recorder;
 let chunks = [];
 let mediaStream = null;
+let meetingRecorder = null;
+let meetingStream = null;
+let meetingSessionId = null;
+let meetingActive = false;
+let meetingUploadChain = Promise.resolve();
 let activeHoldingBubble = null;
 let activeAudio = null;
 let abortController = null;
@@ -826,6 +884,10 @@ function getUserId() {
 const app = document.getElementById("app");
 const start = document.getElementById("start");
 const stop = document.getElementById("stop");
+const meetingStart = document.getElementById("meetingStart");
+const meetingEnd = document.getElementById("meetingEnd");
+const meetingBanner = document.getElementById("meetingBanner");
+const meetingBannerText = document.getElementById("meetingBannerText");
 const sendText = document.getElementById("sendText");
 const textInput = document.getElementById("textInput");
 const chatWrap = document.getElementById("chatWrap");
@@ -1565,10 +1627,12 @@ function abortInFlightRequests() {
 
 function setComposerBusy(busy) {
   isProcessing = busy;
-  sendText.disabled = busy;
-  textInput.disabled = busy;
-  start.disabled = busy && recorder && recorder.state === "recording" ? false : busy;
-  stop.disabled = !recorder || recorder.state !== "recording";
+  sendText.disabled = busy || meetingActive;
+  textInput.disabled = busy || meetingActive;
+  start.disabled = busy || meetingActive;
+  stop.disabled = !recorder || recorder.state !== "recording" || meetingActive;
+  meetingStart.disabled = busy || meetingActive;
+  meetingEnd.disabled = !meetingActive || busy;
 }
 
 function primeSpotifyAutoplay() {
@@ -1880,6 +1944,216 @@ async function consumeNdjsonStream(response, onEvent) {
 
   if (buffer.trim()) {
     await onEvent(JSON.parse(buffer));
+  }
+}
+
+function setMeetingUiActive(active) {
+  meetingActive = active;
+  meetingBanner.classList.toggle("active", active);
+  meetingStart.disabled = active || isProcessing;
+  meetingEnd.disabled = !active || isProcessing;
+  start.disabled = active;
+  stop.disabled = active || !recorder || recorder.state !== "recording";
+  sendText.disabled = active;
+  textInput.disabled = active;
+
+  if (active) {
+    status.innerText = "Meeting";
+    status.className = "status recording";
+    hint.innerText = "Meeting notes are recording. Chunks upload automatically.";
+    meetingBannerText.innerText = "Recording meeting notes...";
+  }
+}
+
+async function uploadMeetingChunk(blob) {
+  if (!blob || !blob.size || !meetingActive) {
+    return;
+  }
+
+  const form = new FormData();
+  form.append("audio", blob, `meeting-chunk-${Date.now()}.webm`);
+  form.append("user_id", getUserId());
+
+  meetingUploadChain = meetingUploadChain.then(async () => {
+    const response = await fetch("/api/ai-notes/session/chunk", {
+      method: "POST",
+      body: form
+    });
+
+    if (!response.ok) {
+      throw new Error(`Meeting chunk upload failed (${response.status})`);
+    }
+
+    const data = await response.json();
+    meetingSessionId = data.session_id || meetingSessionId;
+    meetingBannerText.innerText = `Recording meeting notes... ${data.chunk_count || 0} chunks saved`;
+  });
+
+  return meetingUploadChain;
+}
+
+async function startMeetingSession() {
+  if (meetingActive || isProcessing) {
+    return;
+  }
+
+  stopActiveAudio();
+  await stopSpotifyPlayback();
+  abortInFlightRequests();
+
+  const form = new FormData();
+  form.append("user_id", getUserId());
+
+  const response = await fetch("/api/ai-notes/session/start", {
+    method: "POST",
+    body: form
+  });
+
+  if (!response.ok) {
+    throw new Error(`Could not start meeting session (${response.status})`);
+  }
+
+  const data = await response.json();
+  meetingSessionId = data.session_id;
+  meetingUploadChain = Promise.resolve();
+
+  meetingStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  meetingRecorder = new MediaRecorder(meetingStream, { mimeType: "audio/webm" });
+
+  meetingRecorder.ondataavailable = event => {
+    if (event.data.size > 0) {
+      uploadMeetingChunk(event.data).catch(error => {
+        appendLogs([{
+          step: "ai-notes.session.chunk",
+          status: "error",
+          message: error.message || "Failed to upload meeting chunk.",
+          timestamp: new Date().toISOString(),
+          details: {}
+        }]);
+      });
+    }
+  };
+
+  meetingRecorder.start(MEETING_CHUNK_MS);
+  setMeetingUiActive(true);
+
+  appendLogs([{
+    step: "ai-notes.session.start",
+    status: "completed",
+    message: data.message || "Meeting recording started.",
+    timestamp: new Date().toISOString(),
+    details: { session_id: meetingSessionId }
+  }]);
+
+  if (data.tts?.audio_base64) {
+    await playGeminiAudio(data.tts);
+  } else if (data.message) {
+    addMessage("assistant", data.message);
+  }
+}
+
+async function endMeetingSession() {
+  if (!meetingActive || isProcessing) {
+    return;
+  }
+
+  setComposerBusy(true);
+  meetingEnd.disabled = true;
+  status.innerText = "Processing";
+  hint.innerText = "Saving meeting notes...";
+
+  if (meetingRecorder && meetingRecorder.state === "recording") {
+    await new Promise(resolve => {
+      meetingRecorder.onstop = resolve;
+      meetingRecorder.stop();
+    });
+  }
+
+  if (meetingStream) {
+    meetingStream.getTracks().forEach(track => track.stop());
+    meetingStream = null;
+  }
+
+  await meetingUploadChain;
+
+  const form = new FormData();
+  form.append("user_id", getUserId());
+
+  streamAssistantBubble = null;
+  streamBubbleIsHolding = false;
+  resetTtsPlayback();
+
+  try {
+    const response = await fetch("/api/ai-notes/session/end", {
+      method: "POST",
+      body: form
+    });
+
+    let finalResponse = "";
+
+    await consumeNdjsonStream(response, async event => {
+      if (event.type === "status") {
+        hint.innerText = event.message || "Processing meeting notes...";
+        appendLogs([{
+          step: "ai-notes.session.end",
+          status: "started",
+          message: event.message || "Processing meeting notes",
+          timestamp: new Date().toISOString(),
+          details: { session_id: event.session_id || meetingSessionId }
+        }]);
+        return;
+      }
+
+      if (event.type === "note_saved") {
+        appendLogs([{
+          step: "ai-notes.session.end",
+          status: "completed",
+          message: `Meeting note saved: ${event.title}`,
+          timestamp: new Date().toISOString(),
+          details: {
+            note_id: event.note_id,
+            pending_tasks: event.pending_tasks || []
+          }
+        }]);
+        return;
+      }
+
+      if (event.type === "token") {
+        if (!streamAssistantBubble) {
+          streamAssistantBubble = addMessage("assistant", "");
+        }
+        streamAssistantBubble.innerText += event.text;
+        finalResponse += event.text;
+        scrollChatToBottom();
+        if (USE_BROWSER_TTS) {
+          pushSpeechToken(event.text);
+        }
+        return;
+      }
+
+      if (event.type === "error") {
+        throw new Error(event.message || "Failed to save meeting notes.");
+      }
+
+      if (event.type === "done") {
+        if (event.logs) {
+          appendLogs(event.logs);
+        }
+        finalResponse = event.response || finalResponse;
+      }
+    });
+
+    if (finalResponse && !streamAssistantBubble) {
+      addMessage("assistant", finalResponse);
+    }
+  } finally {
+    meetingRecorder = null;
+    meetingSessionId = null;
+    setMeetingUiActive(false);
+    setComposerBusy(false);
+    status.innerText = "Ready";
+    status.className = "status";
+    hint.innerText = "Type and press Send, or use Start / Stop for voice.";
   }
 }
 
@@ -2501,6 +2775,10 @@ textInput.addEventListener("keydown", async event => {
 });
 
 start.onclick = async () => {
+  if (meetingActive) {
+    return;
+  }
+
   stopActiveAudio();
   await stopSpotifyPlayback();
   abortInFlightRequests();
@@ -2535,6 +2813,10 @@ start.onclick = async () => {
 };
 
 stop.onclick = async () => {
+  if (meetingActive) {
+    return;
+  }
+
   if (!recorder || recorder.state !== "recording") {
     return;
   }
@@ -2651,6 +2933,37 @@ stop.onclick = async () => {
       abortController = null;
     }
   };
+};
+
+meetingStart.onclick = async () => {
+  try {
+    await startMeetingSession();
+  } catch (error) {
+    appendLogs([{
+      step: "ai-notes.session.start",
+      status: "error",
+      message: error.message || "Could not start meeting session.",
+      timestamp: new Date().toISOString(),
+      details: {}
+    }]);
+    setMeetingUiActive(false);
+  }
+};
+
+meetingEnd.onclick = async () => {
+  try {
+    await endMeetingSession();
+  } catch (error) {
+    appendLogs([{
+      step: "ai-notes.session.end",
+      status: "error",
+      message: error.message || "Could not end meeting session.",
+      timestamp: new Date().toISOString(),
+      details: {}
+    }]);
+    setMeetingUiActive(false);
+    setComposerBusy(false);
+  }
 };
 
 loadProfile();

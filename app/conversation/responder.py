@@ -34,9 +34,14 @@ Choose spotify when the user clearly wants music on Spotify, such as:
 - search for a song, artist, album, or playlist
 - ask what is currently playing
 
+Choose meeting_notes when the user asks about past meetings, such as:
+- what happened in the latest or last meeting
+- meeting summaries, action items, pending tasks, or completed tasks
+- what was discussed in a meeting
+
 Choose normal for stable general knowledge, opinions, explanations, or conversation.
 
-Reply with only one word: web_search, spotify, or normal.
+Reply with only one word: web_search, spotify, meeting_notes, or normal.
 
 User message:
 {transcript}

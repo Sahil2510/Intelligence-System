@@ -1,10 +1,12 @@
 import time
 
 from app.config import (
+    HOLDING_RESPONSE_PROMPT_NAME,
     LANGFUSE_PROMPT_LABEL,
+    MEETING_NOTES_EXTRACT_PROMPT_NAME,
+    MEETING_NOTES_RETRIEVAL_PROMPT_NAME,
     SYSTEM_PROMPT_NAME,
     WEB_SEARCH_PROMPT_NAME,
-    HOLDING_RESPONSE_PROMPT_NAME,
 )
 
 from app.prompts.langfuse_client import langfuse
@@ -42,4 +44,14 @@ class PromptRegistry:
     def holding_response_prompt(self) -> str:
         return self.get_text_prompt(
             HOLDING_RESPONSE_PROMPT_NAME
+        )
+
+    def meeting_notes_extract_prompt(self) -> str:
+        return self.get_text_prompt(
+            MEETING_NOTES_EXTRACT_PROMPT_NAME
+        )
+
+    def meeting_notes_retrieval_prompt(self) -> str:
+        return self.get_text_prompt(
+            MEETING_NOTES_RETRIEVAL_PROMPT_NAME
         )

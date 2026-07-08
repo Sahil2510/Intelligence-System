@@ -1,0 +1,49 @@
+Convert the raw meeting transcript below into a well-structured Markdown document.
+
+Use this exact section order and heading levels:
+
+# {Meeting Title}
+
+## Meeting Info
+- **Date:** {date if known, else "Not specified"}
+- **Duration:** {duration if known, else "Not specified"}
+- **Source:** Raw transcript
+
+## Summary
+Write 3–6 sentences covering the main purpose of the meeting and the most important outcomes. Keep it under 180 words.
+
+## Keywords
+Bullet list of 5–12 topical keywords or short phrases.
+
+## Discussion Points
+Break the meeting into logical subsections using `###` headings (for example: "Reminder Creation via App", "Voice Command Flow", "Validation Rules").
+Under each subsection, use bullets for key points, debates, and decisions mentioned in the transcript.
+
+## Decisions
+Bullet list of explicit decisions or agreements. If none are clear, write: `- None explicitly recorded.`
+
+## Action Items
+Markdown table with columns: Task | Owner | Due | Status
+- Status must be `pending` or `completed`.
+- Include only items that are clearly action items from the transcript.
+
+## Pending Tasks
+Bullet list of open follow-ups (can mirror pending rows from Action Items in plain language).
+
+## Completed Tasks
+Bullet list of tasks explicitly marked done or confirmed completed in the transcript. If none, write: `- None explicitly recorded.`
+
+## Open Questions
+Bullet list of unresolved questions or items needing follow-up. If none, write: `- None explicitly recorded.`
+
+Formatting rules:
+- Preserve important product terms, feature names, and quoted phrasing from the transcript when useful.
+- Do not include speaker timestamps or line numbers in the final notes.
+- Do not add a table of contents.
+- Do not wrap the output in ```markdown fences.
+
+---
+
+RAW TRANSCRIPT:
+
+{transcript}

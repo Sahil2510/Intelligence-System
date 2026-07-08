@@ -21,6 +21,26 @@ HOLDING_RESPONSE_PROMPT_NAME = os.getenv(
     "holding-response-luvio",
 )
 
+MEETING_NOTES_EXTRACT_PROMPT_NAME = os.getenv(
+    "MEETING_NOTES_EXTRACT_PROMPT_NAME",
+    "meeting-notes-extract-luvio",
+)
+MEETING_NOTES_RETRIEVAL_PROMPT_NAME = os.getenv(
+    "MEETING_NOTES_RETRIEVAL_PROMPT_NAME",
+    "meeting-notes-retrieval-luvio",
+)
+
+GEMINI_EMBEDDING_MODEL = os.getenv(
+    "GEMINI_EMBEDDING_MODEL",
+    "gemini-embedding-001",
+)
+GEMINI_EMBEDDING_DIMENSION = int(os.getenv("GEMINI_EMBEDDING_DIMENSION", "768"))
+
+AI_NOTES_SESSION_TTL_SECONDS = int(os.getenv("AI_NOTES_SESSION_TTL_SECONDS", "86400"))
+AI_NOTES_CHUNK_INTERVAL_SECONDS = int(
+    os.getenv("AI_NOTES_CHUNK_INTERVAL_SECONDS", "30")
+)
+
 GEMINI_TTS_MODEL = os.getenv(
     "GEMINI_TTS_MODEL",
     "gemini-2.5-flash-preview-tts",

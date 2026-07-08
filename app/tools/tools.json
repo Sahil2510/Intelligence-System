@@ -15,6 +15,12 @@
       "enabled": true,
       "show_holding_response": false,
       "description": "Music playback control such as play, pause, skip, or queue songs on Spotify."
+    },
+    {
+      "name": "meeting_notes",
+      "enabled": true,
+      "show_holding_response": true,
+      "description": "Questions about past meetings, summaries, action items, or pending tasks."
     }
   ]
 }

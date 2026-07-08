@@ -1,0 +1,597 @@
+​Reminders Story Grooming -Routine Design & Story Grooming-20260603_164243-Meeting Recording
+June 3, 2026, 11:12AM
+2h 21m 30s
+
+Sagar Khachane started transcription
+
+Sagar Khachane   0:05
+What is?
+Similar.
+Hey Cortana, tell me, it's my basically a story: Cortana, reminders.
+I want to create a reminder from routine section using routine section.
+Add preference, no? I do a preference design using voice commands or the app, so that I can receive timely spoken reminders for personal tasks, recurring activities, and important events. You saw UX flow here, user opens the app and enters the add your preference sections.
+Story mismatch.
+Big part of that.
+The last time user create a user selects create reminder they basically UX flow, exceptions, function changes.
+User must be able to create reminders from the routine section using App UI.
+Which doubt is pay?
+Okay.
+Vijay 8 out there.
+Whatever.
+Deepika.
+User must be able to enter reminder message contained, you must be able to create the formula and your preference settings using app.
+Yeah, yeah, yeah, yeah, yeah, reminder creation of my app settings settings using user must be able to create reminders from the add your preference section using app UI app.
+Set your preference, alarm, to set your preference, alarm, reminder, user must be able to enter reminder message content.
+And then play, like, the one matches that.
+User must be able to select date, time, recurrence mode, and rooms.
+Again, user must be able to save the reminder successfully.
+This will be validation over, yeah, validation, yeah, yeah, create one, create one, validation, validation, validation, validation, mandate, so, mandate, so, by a voice.
+User must be able to create reminders using voice commands. The system must capture reminder intent, message, and schedule accurately.
+Schedule reminder at Thursday, 7 P.m. to call on mom, so to call on mom, no to call on mom, Thursday, 7 P.m. or reminder, reminder.
+To call them all.
+You have a reminder, you have a, you have a reminder to call him off, stamp it will trigger.
+No fallback.
+OK, successful.
+To call on call tomorrow.
+Are you gonna miss me?
+Make you, you need that window.
+We need to call her Mum or Mum, but Mum happens.
+Call to one, yeah.
+I have called a reminder, call tomorrow. How many bad people are you saying Prashant Sir, if you want to call him?
+Call to Mom.
+Reminder at 5:00 to call home, schedule your reminder at 6:00 to call home.
+You figure it over.
+It doesn't help.
+Call Ranjan, call Ranjan.
+Call, call, so number two column, number two column.
+To call your mom and message I try. So, hold on.
+Message, Nikhal.
+This is a reminder. Set a set a reminder, schedule a reminder. Yeah, but this is a reminder to you to call her home at.
+Reminders, reminders schedule.
+It's a message, yeah, respond reply, success message, no thing, and I, feedback, feedback, we might have set successfully, alarm set successfully, reminder set successfully, schedule, schedule, schedule, schedule.
+Please self acknowledge reminder set successfully first because move in complex to use a message we find. Acknowledgement.
+Hey Cortana, play.
+So, I think I have a scheduled schedule, alarms, schedule, remind us, schedule, and leave a message.
+No, the same issue again, I don't check that or something.
+Yeah, but the way for that success message to you, or it actually, but yeah, we could show start right now.
+So, we have to reminder that.
+Yeah, generally nothing.
+But, we have a, I put over here.
+It's a reminder every day, take care, I need your reminder, set a reminder at 5 P.m. to call a bank, for every day, return, return.
+Because it will be any selector, Monday, Friday, Monday, like, it's been fully, very cool, Saumya.
+Mm.
+Hi.
+I done.
+Ahh.
+OK.
+Thumbs up.
+Correct.
+Yes.
+Correct.
+We can, yeah.
+Reddy.
+I will see if reminders, alarms, or he said, default, default.
+No, no, no, no.
+It was like that.
+I am.
+No, I don't think it's OK. It's OK.
+Are they recording? Take care. System must capture reminder, intend, message, and schedule accurately. Yeah, back in, sir. Hey, but back in.
+Ohh, ohh.
+No.
+Find us directly back and sync database, exactly, yeah, yeah, setting, setting mini, yeah.
+Future, this will gonna get tag tag toggled in India, yeah, yeah, yeah, yeah.
+Say, tell us, we can set it, but I was the thing right to start the day, yeah, yeah, yeah, yeah, yeah, yeah, yeah, yeah, yeah.
+But I don't think so.
+Yeah.
+Natural keywords. Create a reminder at 7 P.m. today. Set a reminder for 7 P.m. today. Schedule a reminder for Thursday, 6 P.m. Play a reminder at Thursday, 6 P.m. in the living room. Word, word, word.
+Play, play, add a reminder for my meeting, put a reminder for 9 P.m., make a reminder, make a reminder for the dentist at noon.
+Keyword keywords.
+Noon is 12.
+In my dictionary, make a reminder, remind me to remind me and remind me next.
+Remind me at actually sentence remind me at remind me at 6:30 P.m. to leave dinner keywords prompt me update user keywords use reminder examples example.
+Give me a nudge, Madhan, give me a nudge at 11 AM to call back.
+Reminder: any of them? A lot of people said that, and that's okay. Ping me at 3 P.m. about about the invoice.
+Yeah, but I got a reminder, problems to send off.
+Don't let me forget to stand up at 10 A.m. Don't let me forget.
+Meenu Naik. Hey, Madhan.
+Other username, Abhi, do, sir, don't let me forget to take a meeting at 11 P.m. today.
+Play Naik Rai.
+Hey, but don't let me forget, reminder, just stand up at 10 A.m.
+Stand up, stand up, stand up, stand up, stand up. Wake me up at 8.
+Wake me at Eko alarm banana. When you call me, when you call me, when you call me, when you call me, you don't let me forget the stand up at 10 A.m. Stand up at 10 A.m. You have stand up at 10 A.m.
+Mahina, reminder number of messages, one standard way, that's a standard.
+You were having to stand up at 10 AM. Yeah, you are having stand up at 10 AM. I'm just snooze me, I'm just snooze me, Karvada.
+Kind of, there is a reminder, set up.
+Set an alarm, set an alarm, set a reminder, set a reminder, set a reminder, plan a reminder.
+Okay.
+You have a reminder, reminder at lunchtime tomorrow. Sorry, cancel tomorrow. Should be a message at the time.
+Yeah, yeah, yeah, yeah, yeah, yeah, yeah, yeah.
+The teacher, they're on. I'm not by the check the Gurudi. I'm not.
+Pick me to see that the happy flow they don't.
+Notify me to submit the report by Vidhi. We can, we can message, submit a report, submit a report.
+There's a reminder to submit a report. There is a reminder to submit a report. Modern, I put message banana will be. I need to submit a report at 5 minutes. This is a reminder now.
+So, this is a reminder for you to submit a request. This is a reminder to you to submit a request.
+There is a mind bang for you to submit a report, the only message, the only message, the only message, it will be like, and then, but, but, but Sagar, Jaisal announce in this this rule, how are you fix it?
+So, SC on the site has the whole of last one as a message.
+Yeah, we said keyword example, yeah, actual keyword, yeah, keywords, keyboard, free time or free message, SSN.
+Create, Voice, or via Apple, take care, yeah, story, passing voice, Voice.
+Hey, Cortana, is that is a problem?
+Reminder to take medicine at 8 PM. Take medicine in the place. There is a reminder to take medicine. There is a reminder to take medicine to take medicine in the place which is saving the.
+Hey Cortana, play Dia Tamil's go first. Story they can change Karaya. I'm Log Martin Madams. Hey, whoa, I see some say both actually. I'm not.
+Send me a reminder. What is that? Send me a reminder.
+Send me a reminder, send me a reminder, send me a reminder at 5 P.m. call before 5 P.m. call.
+Send, just send.
+Create a reminder, create a reminder, schedule a reminder.
+I see, Cortana, I have a reminder, but it's a, it's a, it's a, it's a.
+Discussion keys direction: Meenu Raj, Meenu Rai.
+Hey Cortana, keyboard, user can use this keyboard to use the response.
+What are they doing? I'll be discussing. I know. Example user can create a reminder using these keywords.
+Hey, Cortana, play the story, play the story.
+By the Pooran story, go through, go through, go through.
+When I got a response, I got a message missing, I got a response, I got a chaining, but all, we can, we can, we can update.
+Big Bansal.
+Hit again.
+Gaurav.
+Hey Cortana, play.
+Hey, Cortana, play me.
+Ekto problem cannot testable stories, but tumhara efforts khatamotar, Islam is baffled, break a break may be tumko pora chahiye mere le problem yeh, mere le me mere le sip me teen story banana kiye.
+For example, editor reminder.
+Story, create, edit, delete, update, Karu, again, Mera Rai, I think about now, tomorrow, really.
+Cloud is maybe Chat GPD is.
+Hey, Cortana, missing.
+Yeah, I need to update changing to Omar Dalo, yeah, yeah, yeah, yeah, yeah.
+User can edit the reminders.
+Go.
+No document, document.
+User should be able to perform edit action through the app with full control over upcoming reminders item. Story cover user alarm, yeah reminder, basically reminder.
+Yeah, reminder, edit via app.
+Nine. Wow, what's the possibility? Yeah, it doesn't there have that. Three sixty-five 9. Low 59 number.
+Hey Cortana, play with Fifty-nine. Ohh, I'm going to put another story upgrade.
+U.S.M. Jobi Panagam.
+Reminder response, the specific reminder, the message, the specific reminder, Jeremy's, they, they, they.
+There are two big questions there, other one up in any address, so that, so, and to download a story, hold in charge until the better, understand.
+But to the question, question, question.
+No, no, no, previous upcoming only upcoming reminders will be upcoming time.
+Hey Cortana, play "Back the Pass Time".
+Yeah, Deepika automatically change, pass time to clock in the data, go add my selection.
+Other vocab will be alarm reminder, or may alarm reminder, edit can a bad game alarm reminder, reminder go edit, 4:00, 4:00 PM, so go.
+Previous day, Kanil Madhan, I said logic previous time, previous date cannot be selected.
+But if some dynamic I will do.
+So, otherwise, char budget said we carry in a to set hoga reminder.
+Hey, Cortana.
+One Tera Point validate previous time, previous or delete, update, voice, delete, update, edit, delete, update, edit, voice, then you say voice, talk back, we include that back creation.
+Voice, Creation, Talkback, Talkback, direct voice, or delete or update, app message, app message, basically, execute, talkback, say voice, basically, voice it.
+So, user must be able to edit any reminders via app at any time.
+Anytime, anytime, reminder me, user can edit the reminders at anytime, via app, reminders, reminders, reminder.
+But not a particular reminder.
+User must be able to edit any single field of item at any point, date, time, recurrence, room level selection, go particular item message user must must also be able to edit multi.
+Full fills in one section before saving, change reminder is change, Jadhav edit is a 100% edit.
+So, editable fields examples, time reminder text, date, time, recurrence mode, room selection, playback mode, playback mode.
+Yeah, upcoming items only, Joe, the upcoming reminder, he will edit, I need Joe reminder, reminder.
+So, edit so already triggered completed item must get vanished from the list.
+Okay, triggered item is successfully triggered one time item should vanish after successful run.
+Voice edit restrictions. User must not be able to edit alarms via reminder via voice. User must not be able to edit reminder via voice. For alarm reminders, voice edit Naik.
+Hey, this is my alarm.
+Bigger.
+After editing, update values must be saved successfully. Update item must reflect latest changes immediately in the app list. HK says user try to edit an already triggered item, not possible. It should get vanished immediately.
+Jitendra alarm, Chilaka, Vidhi, I need it connected, is user attempts, there is one.
+Hey, Cortana, play the song.
+Say, but I know, alarm Tera set, reminder that I did 658 way, consider that, or did Karte Karte Karte Sadhwa Chuka, Naina, there was already event point.
+Rainy, executive, Jadhav, you need to save, update, details, executive, okay, one day, update, update, update.
+What do I mean? What do I mean? Edit, edit, not edit.
+Other user data successor, or alarm reminder trigger message, the message, the alarm reminder of this ID.
+How to create a new alarm? Create a reminder, create a new reminder, or create a new alarm. Text message against my update to the data story, man.
+Fix it alarm ID not found.
+OK, but other was 6 fifty-seven, 6 fifty-nine.
+Update details here.
+Agar Madhan Mahesh Jadhav Bola Ki Medicine Mujhe Lena Firmane AD Kia 659 Ki Medicine Lena Mujhe meeting.
+Cortana.
+You can edit, yeah, and update, even though you can delete it.
+Hey Cortana, normal, normal functionality, seconds, milliseconds.
+Uh, user obtains all delete through voice, so this may have wait.
+Are you votes?
+Delete, delete, delete user voice performing, delete, how many call discuss can a user cannot edit, delete, update via voice.
+I said, I will check.
+Because, really, because those can check on me, Jadhav.
+Other voice command, yeah.
+Create, edit, update, delete, create a voice, create a voice, delete, single room, single room, restriction, single room.
+Oh, there is speech fair.
+But add maximum we can select in one room, so you can select, you can create alarm reminder up to one room only, minimum, minimum one room.
+Nain, Nain via voice, via voice, I got to this room, say that I go to this room.
+Nambol Madhan.
+User edit an item very close to trigger possible can edit and save before it gets triggered. OK, network interruption during save delete action. User has to redo the whole thing again. Other internet issue network interruption the user go poor action.
+To look partial safe, can I come again in Hain?
+And let the internet connection pop up, but you could save, unless he again has internet connection.
+Dan Wilton.
+So, he cannot edit, yeah, simple.
+In case of any any kind of network interruption, any kind of.
+So, to editable face to open, he cannot edit unless network is re-established.
+They never get up to you.
+Ha, we cannot say, but his position, next action.
+Recurring item deleted after once recurring should stop feature because recurring item must remain active and should not get deleted after single time execution, but the reminder recurring here to ask executive statement.
+Recurring reminders, there a recurring one-time execute. OK, delete, delete.
+Hey, this is the, yeah, yeah, but the, the, the, the, the, the, the, the.
+Stay till the shoot, by default, Nikhil.
+TK, yes, take a story.
+Evening.
+T.K. K.K. K.K. Karlo.
+That's it.
+Yeah, 6:38 for my message here.
+Yes.
+What's that?
+Hey, Cortana, is a recorded time?
+Delete reminders or can stop reminders. Take care.
+Delete of 10 or 10 stop functionality functionality user reminder code delete or add UX may stop.
+Stop the reminder, tell me the reminder.
+Hey Cortana, text stop, delete, stop.
+OK, in case in, hey, so yeah, stop the reminder.
+Okay, I understand. My next stop, every Wednesday, every Wednesday.
+What is this?
+So, user can stop the recalling reminders.
+One.
+For the execution.
+Why, why, why, what the recognition?
+Suddenly, not like it, who's, who's, who's, who's?
+Toggle, but I'm asking you to stop, alarm, toggle, stop, toggle, stop, alarm.
+Next execution, right? Next execution, next execution, next execution was next, yesterday, Wednesday, Wednesday.
+Correct, same day, same week, but you upcoming, but then I will stop.
+So much, yeah, yeah, reminder with the other man is for, okay, okay, stop.
+I'm going to send a reminder, or ask to form a monthly, monthly, monthly.
+Hey Cortana, reminder: they are recurring here, also may disable Cortana.
+One thing you then I go.
+Delete, delete.
+Delete option. Delete option. Delete option.
+No, no, no.
+Hey Cortana, reminder.
+Hey, Cortana, play me.
+Hey Cortana.
+Substitute Konekala Gaurav toh aapne kya nahihar nahihar nahihar nahihar.
+Where is it again?
+And you guys.
+But, Mary, go catching, go catching, go catching, go, yeah.
+Cooperman Dog.
+Hey, Cortana, we actually have an alarm, but it is disabled.
+It's a simple, it's a simple.
+But, but, but, but, but, but, so, so, so, you could lead Gaurav.
+Yeah, to for to leave, they are to have to.
+Hey Cortana, play song.
+Or, say I am disable, but we are in each other. I have me after Pooja Ki, but we are in the logic.
+Gurme, make good reminder banana tomorrow's option here, Ekbar play Karneka, recurrence Karneka, other recurring current to go merry choice and act, which are recurring chaiye, Thomas go bajne do, yeah, may disable, I gotta have recurring for once, Rakuli, I was not timing in a.
+Haha, disable, disable.
+Hold on. Abhishek. Naik.
+Reminders, so you, you, your choice like it to one time recurring, so I'm giving choice to the recurring, my sentence will take a medicine disc.
+So, it's my choice, could manually disable, disable, basically, disable, disable, activity active.
+Yeah, I think.
+Delete, delete is a delete, delete for time, delete for the else wipe for the game.
+So, I can, I can, I can.
+Yeah.
+Yeah, grooming, yeah, grooming, yeah, okay, bye, grooming, grooming.
+I think it is. I think it is. I think it is. I think it is.
+Hey Cortana, reminder, vanish trigger, vanish, well delete via voice possibility, take it to remind the same time and voice request ambiguous, duplicate alarms.
+Same time alarms.
+Okay, but reminder reminder discussion same time same date pay he can create 2 reminders, but if you go to back to back budgeting.
+I think.
+Take a minute.
+Same alarm, logical, exact word by word payment, time be same, day be same, message be same, so whoa, a, a, a message word words of the same.
+Validation needed.
+Hey Cortana, validation, validate via app or via voice.
+Bajaj, take again, reminder is a choice.
+Although to Chaudhari, so fast.
+Huh? Why why I have why I was currently the second network encryption to save me, but still he.
+that reminder will be in active state. We can. The user can disable the recurring reminders from further education.
+Or, could I enable me that?
+Active deactivate.
+Hey, Cortana, one sec, one sec, Cortana.
+One step, execute, execute, delete, disable statement.
+Delete, delete, delete, delete, delete.
+And same goes for Akabaki Ali Ravi.
+Delete right.
+So, disable, enable, disable.
+Man, get to start with a reminder like I have to disable Karthiya to gray out the kega list, ma'am. I public itself.
+Vanish or Sagar?
+One, one second, I call.
+July 1st, July 1st, July 1st.
+So, Agar, Agar, Agar, Tera alarm Bajrai, or Deepika Tuneh Sachin Naik Tuneh.
+I need to disable it manually, manual manual manual action you are performing.
+Yeah, yeah.
+Hey, Cortana, call me.
+Yeah, yeah.
+Take out, okay, until schedule time, post that for, because, so, so, so, so, and discuss, okay, one, go to banana.
+Okay, productive, productive, it is this baby.
+Various, basically, there's a, there's a.
+Hey, Cortana, I am reminded by S.C. by S.C.
+Hey, Cortana, play.
+Yeah.
+Yeah, they are. I think it is.
+The whole type show.
+Bharatiya Singh.
+We need a pattern.
+Hey, Cortana, play.
+Yeah, yeah, yeah, yeah, yeah, and the user feedback, resets coming to the other feedback.
+Say back to me, I need the extended.
+Ohh, right, OK.
+Yeah, delete, delete, user can edit, user can delete, user can create, playback mechanism, edge cases, trigger mechanism, history of routines.
+Or again, somebody alarm for somebody or reminder editing and summary page, somebody.
+Reminder playback mechanism reminder.
+Room specific playback, app created reminder, other apps if reminder is created via app, user must be able to choose single or multiple rooms.
+Okay, reminder must play only in selected rooms at scheduled time. Two room reminders at first. User must have to select at least one room.
+Huh, what's the requirement? Room-specific playback voice created reminders. If reminders created via voice, reminder must play only in the room from where the request originated. This room specify Naik, yeah, to this room.
+Reminder should not play in other rooms, unless explicitly configured in this feature scope. The voice, the voice say play back again.
+Talk back to me, talk back to me, talk back to me.
+Hey Cortana.
+Talk back.
+I will give you later. I think I will. I will. I will. I will. I will. I will. I will. I will. I will. I will.
+Master bedroom for 7:00 PM. Talk back to check in living room, master bedroom, bathroom, check in living room, master bedroom.
+I need a check-in room living room. How? I need a voice for you to talk back all of this.
+So, but, but, but, but, but, but, but, but, but, but, but, so, but, so, but, I mean, concept logic discussed, discussed, the second catch.
+But TalkBack session time out, manually cross button.
+So, we will do something, and silence, which is that he said that you might tell him in one room to room, 3, room for both of them, say, or, but, say, or, but.
+Better reminder in.
+Five different rooms, then I'm like, at 12:00, yeah, yeah, yeah, yeah.
+Yes, it's maybe a problem.
+Hey, Limit, I did. Hey, Limit is a other. So, Limit Meenu.
+So, reminder should not play in other room unless explicitly configured. T.K. Reminder should not play in other rooms unless explicitly.
+P.
+Configured in support, why is connected? OK, you can say that for more, you can.
+Uh, yeah, discuss other username speaker phone reminder speaker.
+Hey, but for Ronak, is not required in this group.
+Stop me.
+Hey Cortana, stop me.
+The office of the story, correct, but hey, I mean, update because on through, okay, separate H.K.S.S. privacy, priority trigger reminders.
+Key same time, same date, or preset as a routinely set, so preset as grooming, but highest priority, second priority reminder, or least priority alarm.
+Yeah, same time date reminder alarm set.
+Remind me to call Mom at 7 P.m. or set an alarm for 7 P.m. So you have a reminder for 7 P.m. to call a mom.
+Ha! Ha! Agar, Agar, Bajana. Ha! Agar, Agar, Agar, Agar, Agar.
+Bad, which is important, which is the management of the.
+So, technically, we'll put on the Boulder. I was like, I love you, I love you, I love you, I love you, I love you, I love you.
+Once, once, once on a case, once we, we, we, we.
+Hey, Cortana, start with the alarm, but might be for something else, Arun might be for something else, a lot of good set here, so why are you already?
+But, but I, I, I, I, I, I, priority to set, right?
+The story to the link they see reminder, it's not similar, must execute after a preset as a routine, must execute last when overlap exists, yes, non-overlapping behavior, yes.
+If routines do not fully overlap on same time, day, day, normal independent execution should happen. No, go to AC tomorrow alarm, sir, reminders, reset, reset, maybe, preset as a routine, yeah, officer has started the preset as a routine for there, right?
+Two alarm, same alarm, same time, alarm, okay, alarm, okay, alarm, multiple, same time, yeah, but the items per series.
+Refined series, Ravi question, ah, the reminder, the reminder.
+So reminder.
+Please alarm, please alarm, yes.
+Hey Cortana, go to interruption.
+Thank you, Sir. I think.
+Hey, Seto Matlab, hi, I get to the.
+But, Jadhav Bhaskar, 8 minute ka schedule alarm hai toh wohi clear kar toh.
+So, I mean, who even triggers me by the way, to go, but I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, yeah.
+Reminder, you can just interrupt yourself, and you, but they say Abhishek the point.
+So that was buffer time.
+Hey Cortana, reminder preset.
+Yeah, yoga.
+So, it is not like it is not like.
+The Jio Jio, I was a bitter.
+Oh.
+You know, basically, we are talking about, we are talking about the session.
+I keep plain reminder must disable if overlapping exists. Swift reminder, office shift alarm, same time schedule overlapping.
+The problem is, I was going to interrupt, so, so, so, yeah.
+Must disable if overlapping exist, or the overlapping here, so reminder that disable, or disable.
+You know.
+Reminder, or along with Sadh Vishwakarma, Tino Eki site time, to two priorities, reset, so by default to reminder for alarm to disable Kartikana, who's moment?
+Hey Cortana, play Sadhguru. Fresh reminder, and then they are fresh.
+Yeah, Cortana, yeah, I agree, I agree, I agree, I agree, I agree, I agree, I agree, I agree, I agree, I agree, I agree, I agree, I agree, I agree, I agree, I agree.
+Are you going to highlight your point? Are you going to take? I will go, I will go, I will go, I will go.
+Execution: Stop, Kartika, both execution, Hoga, execution, Hoga, Creation problem, Kenna, there are two modes.
+Via app, via voice, you can create.
+But voice over app may be there ambiguity, I understood, then when you will...
+Sadhguru, Sadhvi, Jitendra, Taneja.
+But this case only happened when overlapping exists, overlapping is a very rare case.
+If he interrupts, but problem, but problem here, clear me upon interruption.
+Hey, Cortana, play me a song.
+So much so, every time, just because in get your partner will be over, because of pipeline, Rebecca, which makes the interrupt Kiana, to for Sagar, say, it will be over.
+We have to go into the.
+Play, play, play, play, play.
+Seven to seven, one, two, one.
+Merit to disable the word disable the permanent disable in here. What is the case to handle correctly, execute whole jangle, but a user go continuous.
+Execution.
+Ha, disable as in disable new, right?
+Why this was not asked by them also to put only overlapping overlapping case they were rare.
+And yet, in the present, the present, reminder.
+Alarm, reminder, reminder, reminder.
+Same template, you know, category available at to.
+Team party topmost is a routine, second reminder, alarm, routine.
+Reminder, reminder, but reminder me.
+If routines do not fully overlap on the same time, then normal independent execution should occur. They take other non-overlapping behaviour hai, so sad baje mein a routine hai, sad baj kar dominit ko mein a reminder, sad baj kar chime it ko meera alarm it, independent budgeting.
+And.
+Eric.
+I think about it, but you, OK, this job, right?
+I need.
+Whatever, Paul, I announcement, I have for the existing joybook.
+Stop, stop, stop.
+Stop, alarm, stop, reminder, hey me, alarm, alarm, the duration.
+Thirty seconds.
+Stop, stop, stop, stop, stop.
+Multiple rooms, man.
+Wait, I have multiple rooms.
+So why actually to stop the alarm banana? Mini name, Pune, good selection, Diana, multiple rooms, alarm banana, this is my.
+Room to play some of the, room one, room 2, room two, yeah, I can stop tomorrow, you can, like, reset, visit some, it's not like that, uh-huh, yeah, yeah, we need reset.
+Same time.
+When you stop alarm, you give us a choice to select multiple rooms or single rooms.
+Before this, other will see this man, yeah, was make room overlap there for one, yeah, yeah.
+Hey Cortana Tune Alarm Routine Manaya Master Bedroom Kindiye Master Bedroom Kinder Alarm Beshedule Sadhbacheka Apra.
+Ha, globally activated, globally stop, alarm.
+Okay, sir, I can tell you, I can tell you.
+This one, which one? Yeah, it's a bit funny, but we don't want to get that.
+Yeah, yeah, yeah, yeah, yeah.
+Hey, Cortana, play the song.
+Select.
+Hey, uh, uh, uh, uh, uh, uh, uh.
+Ha, correct, correct, but do said in the, but do said in Kilagar.
+Huh, well, how many? Correct, yeah.
+This is a manual intervention. This is a history.
+So, so you are telling my pass features, yeah, man, how to execute, tell us again, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, yeah.
+He is a type is, so he doesn't take it, hello, by history, but a topic a history of triggered reminders, if reminders are scheduled time, event must be logged.
+Hello, Sonali.
+And you can, that's it. Yeah, I've been here in the way. Meenu Gaurav over rejected, but for me, yeah.
+Hey, Cortana, play.
+You execute to where? Alarm, alarm successfully executed at 7 PM. How are you?
+I'm directly the left side.
+Alarm triggered.
+I'll chat, take care. I'm the routines made, I like preset, I like your coach, many existing preset, preset successful executed.
+What's the pattern?
+I'm gonna voicing about to activate morning mode, that is.
+Yeah, history, history.
+Schedule log, schedule log, OK, it's my question, I reminder trigger at schedule time, event must be locked, if we set the routine triggers, event must be locked.
+Arun, what are we?
+Alarm triggered, I got alarm executed successfully at 7 PM. Reminder triggered.
+So, you command the way to, what are my previous contacts? Why?
+Are we on?
+What is the announcement? If you ask, what did I announce last?
+So, if triggered at scheduled time, event must be locked. User must see exhibited routing in existing history page in app.
+To get them, yeah, Arun Gaurav.
+It was up to me. I do.
+What is the weather? This is, this is, this is, this is, this is, this is, this is, this is, this is, this is, this is, this is, this is the, this is the, this is the, this is the, this is the, this is the, this is the, this is the, this is the, this is the, this is the, this is the, this is the, this is the, this is the, this is the, this is the, this is the, this is the, this is the,
+So, so, so, so, so, so, so, so, so, so, so, so, so, so, so, so, so, so, so, so, so, so, so, so, so, so, so, so, so, so, so, so, so, so, so, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, I, yeah.
+Hey, Cortana, play Cortana.
+They are Joe Terra successful trigger, whoa.
+If reminder triggers at scheduled time, event must be logged. If preset has a routine triggers, event must be logged. Take care. History page ability. User must see executed reminders in existing history page in the app. Record accuracy. History should reflect actual trigger reminders only.
+Reminder executed successfully at 7 P.m. Alarm executed successfully at 7 P.m. Routine as a person is successful at 7 P.m. partially triggered due to offline issue. Reminder most triggered as a whole, not partial.
+Hey, Cortana, check it out.
+Take it to execution: Tata Chalu Hoga, tomorrow execution Hoga, I will say Cortana, I will enter it manually. I will say, "Tomorrow is a successful execution here, tomorrow is a successful execution.
+Execution is the execution.
+Hey, Cortana, play the song.
+I think how many announcements have figured a same recurring reminder triggers daily should not happen.
+I should recurring reminder triggers daily, reminder, reminder, daily, daily, with this time, we discussion those stories.
+Reminder reading from summary page and on clicking on reminders.
+So, go summary page. So, yeah, the user must be able to edit a reminder message before or after creation. Updated reminder message must be used for future triggers. User can also edit a reminder from summary page.
+User can edit the reminders from every page. It's my character, D.S.F. 100, 80 characters is a good, 80. I want to, last time, error message.
+Story may be added for table alarm, reminder.
+Yeah, man, this one privacy, ha, but love Abhi, privacy or quiz, is K.? Key, other to name privacy, enable karaka kisi room level privacy or global level privacy, those case my there are Mike Bonde.
+You cannot speak, but execution, execute, privacy, privacy case, execute, but since there are kill switch, mic or speaker.
+History, I correct.
+Hey, Cortana, call one person. Guest user, user by on the on the user, Cortana, Cortana.
+Alarm.
+Via voice, no, but absolutely.
+And then you may be alarmed. M.O.N.C. I know, but not by the word disability. I'm sorry.
+Yeah, yeah, OK, yeah, yeah, yeah, yeah, yeah, yeah, yeah, yeah, yeah, yeah, yeah, yeah, yeah, yeah, yeah.
+From Madhan, if I supported date selected.
+Calendar year should open a monthly view with the current date highlighted. User can swipe or navigate between months within the allowed 30 day range, post date dates beyond 30 days.
+only up to 30 days, you can set the alarm. If you are on 3rd of June, 3rd July, June, May, May, May, calendar, monthly, calendar. Alarm.
+Define, define maximum, define maximum room selection for reminders. User can manually select all available confident rooms for single reminders, select all room functionality will not available in either voice or UI flow.
+Yeah, manually select that.
+Select all options, but he has to select, he gets provide speaker output text for alarm and reminders, so you have a example, you have a reminder set for today.
+4 P.m. Call electrician. Fallback response is Sagar Alarm Ka. Your alarm has been set successfully. 4 P.m. to be an example. Reminder your reminder has been set successfully.
+Name, such successful example, we are announcement, but announcement sent successfully.
+That was the center successfully to master bedroom, yeah, that's one.
+Chello, provide history execution messages for alarms and reminders. Yes, sample alarm execution message alarm successfully executed at 4 P.m. Reminder successfully executed at reminder successfully executed call John.
+So, this is the open some order, tracking was same, right?
+Update media playback handling scenario during alarm and during alarm or reminder execution, any ongoing AI interruption or response playback will be terminated and the alarm reminder will take a priority. Active music playback volume will be reduced and resume to actual after execution while TV playback will remain unchanged.
+Madhan, there are media campaigns, so much, other than that, other than that, other than that, that, that, that, that, that, that, that, that, that, that, that, that, that, that, that, that, that, that, that, that, that, that, that, that, that, that, that, that, that, that, that, that, that, that, that, that, that, that, that, that, that, that, that, that, that, that, that, that, that, that, that, that, that, that, that, that, that, that, that, that, that, that, that volume?
+I, I, I, user level access user who has admin family guest profile assigned can create alarm reminders via app, voice, and history should be logged respectively.
+Create a history, yeah, yeah, yeah, yeah, yeah, yeah, yeah, yeah, but a user who has it assigned.
+History should be locked for a user level, a sentence my son, any level admin family just can create a lunch and reminders, yeah, yeah.
+What's up? What's up? Any user, any user profile, guest, admin, or a family, they can create, edit, update, delete, everything. This is Ravi. Yes, sir.
+From guest for today, admin access there, yeah, create, create user admin family guest assign can create alarm.
+our reminder via app, via voice.
+And history, the history should be long, respectively, Madhan.
+So, we can, we can, so, user can create, any user can create, can create, edit, update, alarms, reminders, presets.
+Yeah, history will work as it, so, yeah, yeah, yeah.
+Hey Cortana, what's happening?
+So, call interrupt okay, call disconnect, call disconnect.
+Ohh, and it is just the right. Chief done. Sorry, Cortana, call Cortana, call me.
+Hey Cortana, play the song.
+Call Taika Vidhi.
+If you're talking to Soyad, I don't want to say to call also, it's not saying call Khachane.
+It.
+Bye. Hello there.
+Avi Prasad Ka Lena.
+Really, you said the design, did you bought this laptop like?
+Ohh, yeah, a lot of not being designed, sorry, meeting, meeting record, I think, yeah, yeah, yeah.
+
+Gurchetan Singh   2:02:52
+Keep on it, you Sagar Khachane.
+
+Sagar Khachane   2:02:53
+Routine dial the guy, his Sagar Khachane.
+
+Gurchetan Singh   2:02:57
+What is that? Record.
+
+Sagar Khachane   2:02:57
+Do not.
+Racist, on record, on record.
+The balance, your team, and reminding to that.
+
+Gurchetan Singh   2:03:14
+The and remind.
+
+Sagar Khachane   2:03:21
+I see, go on then, OK.
+
+Gurchetan Singh   2:03:22
+YouTube.
+
+Sagar Khachane   2:03:24
+Volume.
+
+Gurchetan Singh   2:03:24
+Volume, Volume, Kumbhare.
+Alarm reminder.
+Hello, hello.
+So, take a upper.
+Jumara Prasad Abhi a problem here. Tiki preset Koham define nikar paratik is time to trigger. Tikhana tohum ne jase ki agaku specific time rakhna hami trigger preset trigger. Tika toh alarm reminder say routine IoT devices ko add karwake IoT devices ko at the same time.
+Trigger, according to our preference, so addition regarding the like scheduling it, schedule according to the.
+Preset preset when I if you want to or.
+Yeah, with the guy in a pixel, pixel, pixel. Hey, Badmi, I just want a little bit. Hey, Badmi, I have a badmi, I have a badmi.
+Hey, Leah, Singh, name Dala, GAD, email, so last device.
+Continue check out, continue check out, continue check out preview, continue, you want to schedule a routine or not, if you want to.
+Or schedule, according to the reoccurrence, you can set the preset.
+So this is a once time.
+Sorry, so Abhi, once time selected Akka, Ako, Ek preset Chilaka, or Usme, Ekbari Baje, he cannot to up accordingly set time reminders already set, he cannot according to that, we have to date select Kia, time select Kia, rules select Kia, and accordingly.
+This is preference, let carry or checkout page, that you have scheduled it for the 12:30 P.m. or it need date reminder, take accordingly or reoccurring same flow.
+Reminders, reminder, repeat, select according to daily, weekly, monthly, you can read it out from here, check out preview, skip, skip.
+Okay, after checkout preview, schedule your scene, click schedule page, reset code, define schedule, update.
+Changes key to update or.
+You did selection, time selection, room selection, or you define the preset schedule.
+Toh baha pay a timer, ye timer ka option item, take a just an icon.
+Yeah, I can see them because of them, that's it.
+So, we connected to schedule learning.
+Yeah, like, schedule, listing, listing, reminder listing, preset, under integrate, preset, alarms, alarms and reminders.
+Reminder, yes, go over here, go over here, reminder, just select the date, the same as reminder, but execution same as presets.
+It's not like this, apart from schedule, yes, and the play here, the play over, the schedule will be very, very good, very good, they say when I like configure here, custom option, when I chat, configure.
+Hey Cortana, schedule my name for room, so I got a position which room selected, so app custom light, pre-filled schedule.
+Scheduled in the room, can you have a pre-filled, or we add Kasthuri also delete?
+Room, because I'm dating time, yeah, date fill. Hey, we have time, but many light configuration master bedroom.
+Or, guest parking, execution time, execution time, who specific room, light checkpoint, who configure accordingly?
+Schedule case means the position of schedule master bedroom or of schedule, sorry, light configure master bedroom key or schedule master bedroom already selected.
+They cannot to up, up to accordingly schedule although continue.
+Global, global, global, global, I tell you in this section.
+You can select that, you can keep that, or you can remove that, or you can add new routes also, other new routes, other, yeah, yeah, yeah, yeah, yeah, yeah, yeah, yeah, yeah, yeah, yeah, yeah, yeah, like same right now.
+Of many bullock playing in general, so go other custom settings, those are room is active, go, yeah, we can work schedule, schedule, schedule, schedule, go room, custom, some execute, send it, send it.
+No, no, no.
+That is, that room which you are selecting only if you are customized like, otherwise customized like, I know candidate executed, independent, override, specific master room, master room, schedule evening mode.
+Or bedroom evening mode or lights execute only same execute name.
+That is only late, although late, 9 is good, correct, standard overhead, overhead, checkpoint, custom, custom, global, global.
+What?
+Hey, I'm Navin.
+Double 81823.
+Double 81823.
+The timer I was waiting for is connected, right?
+It is same as preset, put changes, correct? This is preset version three, this is preset version three.
+We were supposed to create this as in another feature, same execution.
+This very key story here, the preset as a routing function. This announcement introduced the routing scheduling within the existing preset creation flow, allowing user to configure preset as one-time reoccurring routing within the room-based execution and scheduling controls. This feature maintains all existing preset functionalities.
+While adding flexibility automation for room customization and scheduling management capabilities, acceptance criteria, this existing flow will remain unchanged of the presets. Same second user creates the presets flow. After clicking on the add button, the user will enter the preset creation page.
+On the preset creation page, user will enter preset name, same flow, name, icon, other required preset details. After completing the preset details, user will go to IoT section, post mail, light, shade, job, same floor, same in IoT section, the user will add the configure IoT and same preset.
+Existing preset feature like drag and drop, GADA email will remain the same, all same. Additional flow is after IoT setup, before the summary page, the user will be asked to schedule the routine. Under schedule routine, as per design, there is once and reoccurring. There are two tabs. Under once category, user can only select.
+Date, time, and the room where it has to be executed. He cannot select the range, he can select and when it is which room it has to be executed. Once under recurring, select the frequency, repeat daily, weekly, monthly.
+Similar to...
+How about the reminder? That is for other. Select the time that when this routine has to be executed on the selected frequency. Select until when this routine has to be done, but same as the reminder, select rooms, save the routine and checkout.
+After completing all the configuration, the user will proceed to the summary page to the final review and save. Here, user can edit the preset at any time and also can disable the routing scheduler by using the toggle button given for the future use.
+And the rooms with the global rooms with the global configuration will execute the global room setting.
+While room with the customized late configuration will execute the customized late setting, respective of the rooms, T.K. and privacy kills which were gonna same Rai.
+Preset routine cannot be created via voice. This cannot be created via voice preset routine. And if user is selected, talk back via speaker or talk back via phone, then app, then response should always come as speaker only. Admin, family, guest, user can create, edit the preset as a routine.
+In the homepage, create edit, so existing functionality was same, preset, preset creation, then.
+Guest, I think, yeah, I see, I see, yeah, I see, yeah, I see, yeah, yeah, yeah, yeah, yeah, yeah.
+So, yeah, so, yeah, it's my story, so designs.
+Thank you, so we go there, we have, we have to talk about, and so existing will be remain same, only you can schedule.
+Yeah, that's how people are gonna use the word in that, huh? That you get, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, we, yeah.
+I'll be the discussion.
+Alarm reminder, reminder, reminder may be same, I say, delete button, changes, as per reminder, user intention, but it's routine, but it says.
+Same functionality.
+It doesn't be some stuff like for the party, the party.
+Yeah, I got.
+
+Sagar Khachane stopped transcription

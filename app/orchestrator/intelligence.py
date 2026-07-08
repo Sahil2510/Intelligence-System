@@ -443,6 +443,7 @@ class IntelligenceOrchestrator:
                 prompt_builder=self.prompt_builder,
                 profile=profile,
                 ltm_memories=ltm_memories,
+                user_id=resolved_user_id,
             )
 
         tts_id = None
