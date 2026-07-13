@@ -1,8 +1,10 @@
 from contextlib import contextmanager
 import json
+from pathlib import Path
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from app.config import AI_NOTES_CHUNK_INTERVAL_SECONDS, SPOTIFY_CLIENT_ID, STREAM_TTS_MODE
@@ -22,8 +24,11 @@ from app.utils.pipeline_log import (
 )
 
 
+STATIC_DIR = Path(__file__).resolve().parent / "static"
+
 app = FastAPI()
 app.include_router(ai_notes_router)
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 orchestrator = IntelligenceOrchestrator()
 spotify_client = SpotifyClient()
 
@@ -91,6 +96,8 @@ PLAYGROUND_HTML = """
 <html>
 <head>
   <title>Luvio Playground</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/static/favicon.svg">
   <style>
     :root {
       color-scheme: light;
@@ -418,6 +425,7 @@ PLAYGROUND_HTML = """
     }
 
     .shell {
+      position: relative;
       display: grid;
       grid-template-rows: auto 1fr auto;
       height: 100vh;
@@ -722,6 +730,241 @@ PLAYGROUND_HTML = """
       white-space: pre-wrap;
       word-break: break-word;
     }
+
+    .live-voice-btn {
+      width: 40px;
+      height: 40px;
+      padding: 0;
+      border: none;
+      border-radius: 50%;
+      background: #111;
+      color: #fff;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      flex-shrink: 0;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22);
+      transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+    }
+
+    .live-voice-btn:hover:not(:disabled) {
+      transform: scale(1.05);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
+    }
+
+    .live-voice-btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .live-voice-btn.active {
+      background: #10a37f;
+    }
+
+    .live-voice-btn .wave {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 2.5px;
+    }
+
+    .live-voice-btn .wave span {
+      width: 2.5px;
+      border-radius: 999px;
+      background: #111;
+      display: block;
+    }
+
+    .live-voice-btn .wave span:nth-child(1) { height: 8px; }
+    .live-voice-btn .wave span:nth-child(2) { height: 16px; }
+    .live-voice-btn .wave span:nth-child(3) { height: 12px; }
+    .live-voice-btn .wave span:nth-child(4) { height: 8px; }
+
+    /* Live voice dock: chats stay fully visible and scrollable. */
+    .voice-overlay {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      top: auto;
+      z-index: 25;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 10px;
+      padding: 12px 16px 10px;
+      pointer-events: none;
+      background: linear-gradient(
+        to top,
+        rgba(247, 247, 248, 0.96) 0%,
+        rgba(247, 247, 248, 0.82) 55%,
+        rgba(247, 247, 248, 0) 100%
+      );
+    }
+
+    .voice-overlay.active {
+      display: flex;
+    }
+
+    .voice-orb-wrap {
+      position: relative;
+      width: 112px;
+      height: 112px;
+      display: grid;
+      place-items: center;
+      pointer-events: auto;
+    }
+
+    .voice-orb-ring {
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      border: 2px solid rgba(16, 163, 127, 0.28);
+      transform: scale(0.92);
+      opacity: 0.45;
+      transition: transform 0.2s ease, opacity 0.2s ease, border-color 0.2s ease;
+    }
+
+    .voice-orb {
+      position: relative;
+      width: 72%;
+      height: 72%;
+      border-radius: 50%;
+      background: #111;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+      transition: transform 0.12s ease;
+    }
+
+    .voice-orb .bar {
+      width: 4px;
+      border-radius: 999px;
+      background: #fff;
+      transition: height 0.08s linear;
+    }
+
+    .voice-orb .bar:nth-child(1) { height: 12px; }
+    .voice-orb .bar:nth-child(2) { height: 24px; }
+    .voice-orb .bar:nth-child(3) { height: 18px; }
+    .voice-orb .bar:nth-child(4) { height: 12px; }
+
+    .voice-overlay[data-state="listening"] .voice-orb-ring {
+      animation: orb-breathe 2.4s ease-in-out infinite;
+    }
+
+    .voice-overlay[data-state="user-speaking"] .voice-orb-ring,
+    .voice-overlay[data-state="thinking"] .voice-orb-ring,
+    .voice-overlay[data-state="speaking"] .voice-orb-ring {
+      animation: orb-throb 1.1s ease-in-out infinite;
+      border-color: rgba(16, 163, 127, 0.65);
+      opacity: 0.8;
+    }
+
+    .voice-overlay[data-state="thinking"] .voice-orb .bar {
+      animation: bar-pulse 0.9s ease-in-out infinite;
+    }
+
+    .voice-overlay[data-state="thinking"] .voice-orb .bar:nth-child(2) {
+      animation-delay: 0.12s;
+    }
+
+    .voice-overlay[data-state="thinking"] .voice-orb .bar:nth-child(3) {
+      animation-delay: 0.24s;
+    }
+
+    .voice-overlay[data-state="thinking"] .voice-orb .bar:nth-child(4) {
+      animation-delay: 0.36s;
+    }
+
+    .voice-overlay[data-state="speaking"] .voice-orb .bar {
+      animation: bar-speak 0.7s ease-in-out infinite;
+    }
+
+    .voice-overlay[data-state="speaking"] .voice-orb .bar:nth-child(2) {
+      animation-delay: 0.1s;
+    }
+
+    .voice-overlay[data-state="speaking"] .voice-orb .bar:nth-child(3) {
+      animation-delay: 0.2s;
+    }
+
+    .voice-overlay[data-state="speaking"] .voice-orb .bar:nth-child(4) {
+      animation-delay: 0.3s;
+    }
+
+    .voice-overlay-label {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 550;
+      letter-spacing: 0.01em;
+      text-align: center;
+      min-height: 1.3em;
+      pointer-events: none;
+    }
+
+    .voice-stop-btn {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      border: 1px solid var(--border);
+      background: #fff;
+      color: var(--text);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: auto;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+      transition: background 0.15s ease, transform 0.15s ease;
+    }
+
+    .voice-stop-btn:hover {
+      background: #f3f4f6;
+      transform: scale(1.06);
+    }
+
+    .voice-stop-btn svg {
+      width: 16px;
+      height: 16px;
+    }
+
+    .shell.live-active .chat-wrap {
+      padding-bottom: 168px;
+    }
+
+    .shell.live-active .composer-wrap {
+      opacity: 0.35;
+      pointer-events: none;
+    }
+
+    @keyframes orb-breathe {
+      0%, 100% { transform: scale(0.92); opacity: 0.35; }
+      50% { transform: scale(1.04); opacity: 0.7; }
+    }
+
+    @keyframes orb-throb {
+      0%, 100% { transform: scale(0.96); opacity: 0.5; }
+      50% { transform: scale(1.12); opacity: 0.95; }
+    }
+
+    @keyframes bar-pulse {
+      0%, 100% { transform: scaleY(0.55); opacity: 0.55; }
+      50% { transform: scaleY(1); opacity: 1; }
+    }
+
+    @keyframes bar-speak {
+      0%, 100% { transform: scaleY(0.45); }
+      50% { transform: scaleY(1.15); }
+    }
   </style>
 </head>
 <body>
@@ -734,7 +977,7 @@ PLAYGROUND_HTML = """
       <div class="chats-list" id="chatsList"></div>
     </aside>
 
-    <div class="shell">
+    <div class="shell" id="shell">
       <header>
         <h1>Luvio Playground</h1>
         <div class="header-actions">
@@ -754,11 +997,29 @@ PLAYGROUND_HTML = """
           <div class="empty" id="empty">
             <div>
               <strong>Ask Luvio with voice or text.</strong><br>
-              Type a message or record audio, then send it through the pipeline.
+              Type a message, use Start / Stop, or tap the voice circle for live talk.
             </div>
           </div>
         </div>
       </main>
+
+      <div class="voice-overlay" id="voiceOverlay" aria-hidden="true">
+        <div class="voice-orb-wrap">
+          <div class="voice-orb-ring"></div>
+          <div class="voice-orb" id="voiceOrb">
+            <span class="bar"></span>
+            <span class="bar"></span>
+            <span class="bar"></span>
+            <span class="bar"></span>
+          </div>
+        </div>
+        <div class="voice-overlay-label" id="voiceOverlayLabel">Listening…</div>
+        <button type="button" class="voice-stop-btn" id="liveStop" title="Stop live voice" aria-label="Stop live voice">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+            <path d="M6 6l12 12M18 6L6 18"/>
+          </svg>
+        </button>
+      </div>
 
       <div class="composer-wrap">
         <div class="composer">
@@ -773,12 +1034,17 @@ PLAYGROUND_HTML = """
             <span id="meetingBannerText">Recording meeting notes...</span>
           </div>
           <div class="composer-row">
-            <div class="hint" id="hint">Type and press Send, or use Start / Stop for voice.</div>
+            <div class="hint" id="hint">Type and press Send, or tap the voice button for live talk.</div>
             <button type="button" class="secondary meeting-active" id="meetingStart">Meeting</button>
             <button type="button" class="secondary" id="meetingEnd" disabled>End Meeting</button>
             <button type="button" class="secondary" id="sendText">Send</button>
             <button type="button" class="secondary" id="start">Start</button>
             <button type="button" id="stop" disabled>Stop</button>
+            <button type="button" class="live-voice-btn" id="liveStart" title="Live voice" aria-label="Start live voice">
+              <span class="wave" aria-hidden="true">
+                <span></span><span></span><span></span><span></span>
+              </span>
+            </button>
           </div>
           <div class="now-playing" id="nowPlaying"></div>
         </div>
@@ -829,6 +1095,7 @@ PLAYGROUND_HTML = """
     </div>
   </div>
 
+<script src="/static/voice/live-voice.js?v=20260713-bargein-capture"></script>
 <script>
 const STREAM_TTS_MODE = "__STREAM_TTS_MODE__";
 const USE_BROWSER_TTS = STREAM_TTS_MODE === "browser";
@@ -848,6 +1115,16 @@ let abortController = null;
 let isProcessing = false;
 let activeChatId = null;
 let logsPinnedToBottom = true;
+let liveVoiceSession = null;
+let liveVoiceActive = false;
+let liveVoiceBusy = false;
+let liveVoiceLevel = 0;
+let liveAssistantText = "";
+let liveBargeInCooldownUntil = 0;
+let liveLastTtsEndedAt = 0;
+let speechKeepaliveTimer = null;
+let browserSpeechQueue = [];
+let browserSpeechSpeaking = false;
 let ttsInProgress = false;
 let ttsJobQueue = [];
 let ttsPrefetch = new Map();
@@ -882,8 +1159,14 @@ function getUserId() {
 }
 
 const app = document.getElementById("app");
+const shell = document.getElementById("shell");
 const start = document.getElementById("start");
 const stop = document.getElementById("stop");
+const liveStart = document.getElementById("liveStart");
+const liveStop = document.getElementById("liveStop");
+const voiceOverlay = document.getElementById("voiceOverlay");
+const voiceOrb = document.getElementById("voiceOrb");
+const voiceOverlayLabel = document.getElementById("voiceOverlayLabel");
 const meetingStart = document.getElementById("meetingStart");
 const meetingEnd = document.getElementById("meetingEnd");
 const meetingBanner = document.getElementById("meetingBanner");
@@ -1041,10 +1324,104 @@ function resetSpeechBuffer() {
 
 function stopBrowserSpeech() {
   resetSpeechBuffer();
+  browserSpeechQueue = [];
+  browserSpeechSpeaking = false;
+  stopSpeechKeepalive();
 
   if (window.speechSynthesis) {
     window.speechSynthesis.cancel();
   }
+
+  syncLiveVoiceTtsSuppression();
+}
+
+function startSpeechKeepalive() {
+  stopSpeechKeepalive();
+  if (!window.speechSynthesis) {
+    return;
+  }
+
+  speechKeepaliveTimer = setInterval(() => {
+    if (window.speechSynthesis.speaking) {
+      window.speechSynthesis.resume();
+    }
+  }, 800);
+}
+
+function stopSpeechKeepalive() {
+  if (speechKeepaliveTimer) {
+    clearInterval(speechKeepaliveTimer);
+    speechKeepaliveTimer = null;
+  }
+}
+
+function drainBrowserSpeechQueue() {
+  if (!USE_BROWSER_TTS || !window.speechSynthesis || browserSpeechSpeaking) {
+    return;
+  }
+
+  const next = browserSpeechQueue.shift();
+  if (!next) {
+    browserSpeechSpeaking = false;
+    stopSpeechKeepalive();
+    syncLiveVoiceTtsSuppression();
+    updateTtsIdleStatus();
+    return;
+  }
+
+  cacheSpeechVoices();
+  const langCode = detectSpeechLang(next, "", activeSpeechLang);
+  activeSpeechLang = langCode;
+  const voice = pickIndianVoice(langCode);
+
+  ttsInProgress = true;
+  browserSpeechSpeaking = true;
+  status.innerText = liveVoiceActive ? "Speaking" : "Speaking";
+  if (liveVoiceActive) {
+    setLiveVoiceUiState("speaking", "Speaking…");
+    hint.innerText = "Replying… speak anytime to interrupt.";
+  } else {
+    hint.innerText = "Playing voice response...";
+  }
+
+  const utterance = new SpeechSynthesisUtterance(next);
+  utterance.lang = langCode;
+  if (voice) {
+    utterance.voice = voice;
+  }
+  utterance.rate = 1.05;
+  utterance.onstart = () => {
+    syncLiveVoiceTtsSuppression(true);
+    startSpeechKeepalive();
+    if (liveVoiceActive && liveVoiceSession) {
+      liveVoiceSession.setCanBargeIn(true);
+      liveVoiceSession.setBargeInGraceMs(400);
+    }
+  };
+  utterance.onend = () => {
+    browserSpeechSpeaking = false;
+    // Keep echo suppression up across sentence gaps in the queue.
+    if (browserSpeechQueue.length || speechBufferText.trim()) {
+      ttsInProgress = true;
+      syncLiveVoiceTtsSuppression(true);
+    }
+    drainBrowserSpeechQueue();
+  };
+  utterance.onerror = () => {
+    browserSpeechSpeaking = false;
+    if (browserSpeechQueue.length || speechBufferText.trim()) {
+      ttsInProgress = true;
+      syncLiveVoiceTtsSuppression(true);
+    }
+    drainBrowserSpeechQueue();
+  };
+
+  try {
+    window.speechSynthesis.resume();
+  } catch (_) {
+    /* ignore */
+  }
+  window.speechSynthesis.speak(utterance);
 }
 
 function speakBrowserChunk(text) {
@@ -1057,32 +1434,8 @@ function speakBrowserChunk(text) {
     return;
   }
 
-  cacheSpeechVoices();
-
-  const langCode = detectSpeechLang(cleaned, speechBufferText, activeSpeechLang);
-  activeSpeechLang = langCode;
-  const voice = pickIndianVoice(langCode);
-
-  ttsInProgress = true;
-  status.innerText = "Speaking";
-  hint.innerText = "Playing voice response...";
-
-  const utterance = new SpeechSynthesisUtterance(cleaned);
-  utterance.lang = langCode;
-  if (voice) {
-    utterance.voice = voice;
-  }
-  utterance.rate = 1.05;
-  utterance.onend = () => {
-    if (!window.speechSynthesis.speaking && !window.speechSynthesis.pending) {
-      updateTtsIdleStatus();
-    }
-  };
-  utterance.onerror = () => {
-    updateTtsIdleStatus();
-  };
-
-  window.speechSynthesis.speak(utterance);
+  browserSpeechQueue.push(cleaned);
+  drainBrowserSpeechQueue();
 }
 
 function extractSpeechChunks() {
@@ -1627,12 +1980,14 @@ function abortInFlightRequests() {
 
 function setComposerBusy(busy) {
   isProcessing = busy;
-  sendText.disabled = busy || meetingActive;
-  textInput.disabled = busy || meetingActive;
-  start.disabled = busy || meetingActive;
-  stop.disabled = !recorder || recorder.state !== "recording" || meetingActive;
-  meetingStart.disabled = busy || meetingActive;
+  sendText.disabled = busy || meetingActive || liveVoiceActive;
+  textInput.disabled = busy || meetingActive || liveVoiceActive;
+  start.disabled = busy || meetingActive || liveVoiceActive;
+  stop.disabled = !recorder || recorder.state !== "recording" || meetingActive || liveVoiceActive;
+  meetingStart.disabled = busy || meetingActive || liveVoiceActive;
   meetingEnd.disabled = !meetingActive || busy;
+  liveStart.disabled = busy || meetingActive;
+  liveStart.classList.toggle("active", liveVoiceActive);
 }
 
 function primeSpotifyAutoplay() {
@@ -1754,9 +2109,28 @@ async function playGeminiAudio(data) {
       `data:${data.mime_type || "audio/wav"};base64,${data.audio_base64}`
     );
 
-    activeAudio.onended = () => resolve();
-    activeAudio.onerror = () => reject(new Error("Audio playback failed"));
-    activeAudio.play().catch(reject);
+    activeAudio.onplay = () => {
+      ttsInProgress = true;
+      syncLiveVoiceTtsSuppression(true);
+      if (liveVoiceActive && liveVoiceSession) {
+        liveVoiceSession.setCanBargeIn(true);
+        liveVoiceSession.setBargeInGraceMs(400);
+        setLiveVoiceUiState("speaking", "Speaking…");
+        hint.innerText = "Replying… speak anytime to interrupt.";
+      }
+    };
+    activeAudio.onended = () => {
+      syncLiveVoiceTtsSuppression();
+      resolve();
+    };
+    activeAudio.onerror = () => {
+      syncLiveVoiceTtsSuppression();
+      reject(new Error("Audio playback failed"));
+    };
+    activeAudio.play().catch(error => {
+      syncLiveVoiceTtsSuppression();
+      reject(error);
+    });
   });
 }
 
@@ -1800,13 +2174,29 @@ function resetTtsPlayback() {
   ttsPrefetch.clear();
   ttsAudioQueue = [];
   ttsNextSentenceIndex = 0;
+  ttsAudioDrainRunning = false;
+  ttsDrainRunning = false;
+  ttsInProgress = false;
   activeSpeechLang = "en-IN";
   stopBrowserSpeech();
+  syncLiveVoiceTtsSuppression();
 }
 
-function updateTtsIdleStatus() {
-  if (isProcessing || ttsJobQueue.length || ttsAudioQueue.length || ttsPrefetch.size) {
-    return;
+function isAssistantSpeaking() {
+  if (ttsInProgress || browserSpeechSpeaking || browserSpeechQueue.length) {
+    return true;
+  }
+
+  if (speechBufferText && speechBufferText.trim()) {
+    return true;
+  }
+
+  if (ttsJobQueue.length || ttsAudioQueue.length || ttsPrefetch.size) {
+    return true;
+  }
+
+  if (activeAudio && !activeAudio.paused) {
+    return true;
   }
 
   if (
@@ -1814,16 +2204,191 @@ function updateTtsIdleStatus() {
     window.speechSynthesis &&
     (window.speechSynthesis.speaking || window.speechSynthesis.pending)
   ) {
+    return true;
+  }
+
+  return false;
+}
+
+function syncLiveVoiceTtsSuppression(forceActive) {
+  if (!liveVoiceSession) {
+    return;
+  }
+
+  const playing =
+    typeof forceActive === "boolean"
+      ? forceActive
+      : isAssistantSpeaking();
+
+  liveVoiceSession.setTtsPlaybackActive(playing);
+
+  if (playing && liveVoiceActive) {
+    if (liveVoiceSession.getState() !== "speaking") {
+      liveVoiceSession.setState("speaking");
+    }
+  }
+}
+
+function normalizeEchoText(value) {
+  return (value || "")
+    .toLowerCase()
+    .replace(/[^\\w\\s']/g, " ")
+    .replace(/\\s+/g, " ")
+    .trim();
+}
+
+function looksLikeEchoTranscript(transcript) {
+  const text = normalizeEchoText(transcript);
+  if (!text) {
+    return true;
+  }
+
+  const words = text.split(" ").filter(Boolean);
+
+  // Short fragments near assistant audio are almost always echo tails.
+  const nearAssistantAudio =
+    isAssistantSpeaking() ||
+    Date.now() - liveLastTtsEndedAt < 8000 ||
+    Date.now() < liveBargeInCooldownUntil + 8000;
+
+  if (nearAssistantAudio && words.length <= 4) {
+    return true;
+  }
+
+  if (words.length <= 2) {
+    return true;
+  }
+
+  const opening = normalizeEchoText(liveAssistantText).slice(0, 280);
+  if (!opening) {
+    return nearAssistantAudio && words.length < 6;
+  }
+
+  if (opening.startsWith(text) || text.startsWith(opening.slice(0, Math.min(opening.length, 40)))) {
+    return true;
+  }
+
+  if (opening.includes(text) || text.includes(opening.slice(0, Math.min(48, opening.length)))) {
+    return true;
+  }
+
+  const significant = words.filter(word => word.length > 2);
+  if (!significant.length) {
+    return true;
+  }
+
+  const matched = significant.filter(word => opening.includes(word)).length;
+  if (matched / significant.length >= 0.6) {
+    return true;
+  }
+
+  // Ordered-word overlap against assistant opening.
+  let cursor = 0;
+  let orderedHits = 0;
+  for (const word of significant) {
+    const at = opening.indexOf(word, cursor);
+    if (at === -1) {
+      continue;
+    }
+    orderedHits += 1;
+    cursor = at + word.length;
+  }
+
+  if (orderedHits >= Math.max(3, Math.ceil(significant.length * 0.55))) {
+    return true;
+  }
+
+  return false;
+}
+
+function handleLiveBargeIn(meta = {}) {
+  if (!liveVoiceActive) {
+    return;
+  }
+
+  if (Date.now() < liveBargeInCooldownUntil) {
+    return;
+  }
+
+  liveBargeInCooldownUntil = Date.now() + 900;
+
+  appendLogs([{
+    step: "voice.barge-in",
+    status: "started",
+    message: meta.duringTts
+      ? "User interrupted TTS — capturing new question"
+      : "User interrupted — cancelling in-flight reply",
+    timestamp: new Date().toISOString(),
+    details: meta
+  }]);
+
+  abortInFlightRequests();
+  resetTtsPlayback();
+  stopActiveAudio();
+  liveVoiceBusy = false;
+  setComposerBusy(false);
+
+  if (liveVoiceSession) {
+    liveVoiceSession.setCanBargeIn(false);
+    // Keep the interrupt utterance; do not apply echo hangover discard.
+    liveVoiceSession.setTtsPlaybackActive(false);
+    liveVoiceSession.setState("user-speaking");
+  }
+
+  setLiveVoiceUiState("user-speaking", "Hearing you…");
+  status.innerText = "Hearing you";
+  status.className = "status recording";
+  hint.innerText = "Interrupted — listening to your question.";
+}
+
+function defaultIdleHint() {
+  if (liveVoiceActive) {
+    return "Listening… speak naturally. Tap ✕ to exit.";
+  }
+  return "Type and press Send, or tap the voice button for live talk.";
+}
+
+function updateTtsIdleStatus() {
+  if (isProcessing || isAssistantSpeaking()) {
+    syncLiveVoiceTtsSuppression();
     return;
   }
 
   ttsInProgress = false;
+  liveLastTtsEndedAt = Date.now();
+  syncLiveVoiceTtsSuppression(false);
+
+  if (liveVoiceActive) {
+    if (liveVoiceSession) {
+      const capturing =
+        typeof liveVoiceSession.isBargeInCaptureActive === "function" &&
+        liveVoiceSession.isBargeInCaptureActive();
+
+      if (!capturing && typeof liveVoiceSession.ignoreUtterancesFor === "function") {
+        liveVoiceSession.ignoreUtterancesFor(800);
+      }
+      if (liveVoiceSession.getState() !== "user-speaking" && !capturing) {
+        liveVoiceSession.setState("listening");
+        setLiveVoiceUiState("listening", "Listening…");
+      }
+      if (capturing) {
+        status.innerText = "Hearing you";
+        status.className = "status recording";
+        hint.innerText = "Interrupted — listening to your question.";
+        return;
+      }
+    }
+    status.innerText = "Listening";
+    status.className = "status recording";
+    hint.innerText = defaultIdleHint();
+    return;
+  }
 
   if (spotifyNowPlaying) {
     status.innerText = "Playing music";
   } else {
     status.innerText = "Ready";
-    hint.innerText = "Type and press Send, or use Start / Stop for voice.";
+    hint.innerText = defaultIdleHint();
   }
 }
 
@@ -1950,12 +2515,13 @@ async function consumeNdjsonStream(response, onEvent) {
 function setMeetingUiActive(active) {
   meetingActive = active;
   meetingBanner.classList.toggle("active", active);
-  meetingStart.disabled = active || isProcessing;
+  meetingStart.disabled = active || isProcessing || liveVoiceActive;
   meetingEnd.disabled = !active || isProcessing;
-  start.disabled = active;
-  stop.disabled = active || !recorder || recorder.state !== "recording";
-  sendText.disabled = active;
-  textInput.disabled = active;
+  start.disabled = active || liveVoiceActive;
+  stop.disabled = active || liveVoiceActive || !recorder || recorder.state !== "recording";
+  sendText.disabled = active || liveVoiceActive;
+  textInput.disabled = active || liveVoiceActive;
+  liveStart.disabled = active || isProcessing;
 
   if (active) {
     status.innerText = "Meeting";
@@ -1993,7 +2559,7 @@ async function uploadMeetingChunk(blob) {
 }
 
 async function startMeetingSession() {
-  if (meetingActive || isProcessing) {
+  if (meetingActive || isProcessing || liveVoiceActive) {
     return;
   }
 
@@ -2153,7 +2719,7 @@ async function endMeetingSession() {
     setComposerBusy(false);
     status.innerText = "Ready";
     status.className = "status";
-    hint.innerText = "Type and press Send, or use Start / Stop for voice.";
+    hint.innerText = defaultIdleHint();
   }
 }
 
@@ -2212,6 +2778,12 @@ async function runStreamQuery(transcript, chatId, profile, signal, options = {})
       if (event.needs_holding) {
         status.innerText = "Searching";
         hint.innerText = "Looking up the latest information...";
+        if (liveVoiceActive) {
+          setLiveVoiceUiState("thinking", "Searching…");
+          if (liveVoiceSession) {
+            liveVoiceSession.setCanBargeIn(true);
+          }
+        }
         streamAssistantBubble = addMessage(
           "assistant",
           event.holding_response || "One moment, I'll check that for you."
@@ -2219,6 +2791,9 @@ async function runStreamQuery(transcript, chatId, profile, signal, options = {})
         streamBubbleIsHolding = true;
       } else {
         status.innerText = "Thinking";
+        if (liveVoiceActive) {
+          setLiveVoiceUiState("thinking", "Thinking…");
+        }
         streamAssistantBubble = addMessage("assistant", "");
         streamBubbleIsHolding = false;
       }
@@ -2235,6 +2810,9 @@ async function runStreamQuery(transcript, chatId, profile, signal, options = {})
         streamBubbleIsHolding = false;
       } else {
         streamAssistantBubble.innerText += event.text;
+      }
+      if (liveVoiceActive) {
+        liveAssistantText = streamAssistantBubble.innerText;
       }
       scrollChatToBottom();
       if (USE_BROWSER_TTS) {
@@ -2488,7 +3066,7 @@ async function playResponseTts(data, transcript) {
   } finally {
     ttsInProgress = false;
     status.innerText = "Ready";
-    hint.innerText = "Type and press Send, or use Start / Stop for voice.";
+    hint.innerText = defaultIdleHint();
   }
 }
 
@@ -2709,7 +3287,7 @@ async function processQuery(transcript) {
         status.innerText = "Playing music";
       } else {
         status.innerText = "Ready";
-        hint.innerText = "Type and press Send, or use Start / Stop for voice.";
+        hint.innerText = defaultIdleHint();
       }
     }
     abortController = null;
@@ -2759,9 +3337,377 @@ nowPlaying.addEventListener("click", event => {
   toggleSpotifyPlayback();
 });
 
+function setLiveVoiceUiState(state, label) {
+  if (!voiceOverlay) {
+    return;
+  }
+
+  voiceOverlay.dataset.state = state || "listening";
+  if (label) {
+    voiceOverlayLabel.innerText = label;
+  }
+
+  if (state === "user-speaking") {
+    applyLiveVoiceLevel(Math.max(liveVoiceLevel, 0.08));
+  } else if (state === "listening") {
+    applyLiveVoiceLevel(0.02);
+  }
+}
+
+function applyLiveVoiceLevel(rms) {
+  liveVoiceLevel = rms;
+  if (!voiceOrb) {
+    return;
+  }
+
+  const intensity = Math.min(1, Math.max(0, (rms - 0.01) / 0.12));
+  const heights = [
+    14 + intensity * 18,
+    28 + intensity * 28,
+    22 + intensity * 24,
+    14 + intensity * 18,
+  ];
+  const bars = voiceOrb.querySelectorAll(".bar");
+  bars.forEach((bar, index) => {
+    bar.style.height = `${heights[index] || 16}px`;
+  });
+
+  const scale = 1 + intensity * 0.08;
+  voiceOrb.style.transform = `scale(${scale})`;
+}
+
+function handleLiveVoiceStateChange(state) {
+  if (!liveVoiceActive) {
+    return;
+  }
+
+  if (state === "listening") {
+    setLiveVoiceUiState("listening", "Listening…");
+    status.innerText = "Listening";
+    status.className = "status recording";
+    hint.innerText = defaultIdleHint();
+    if (liveVoiceSession && isAssistantSpeaking()) {
+      liveVoiceSession.setCanBargeIn(true);
+    }
+    return;
+  }
+
+  if (state === "user-speaking") {
+    setLiveVoiceUiState("user-speaking", "Listening to you…");
+    status.innerText = "Hearing you";
+    status.className = "status recording";
+    hint.innerText = "Speak naturally — pause when finished.";
+    return;
+  }
+
+  if (state === "thinking") {
+    setLiveVoiceUiState("thinking", "Thinking…");
+    status.innerText = "Thinking";
+    status.className = "status";
+    hint.innerText = "Working on your request… speak to interrupt.";
+    if (liveVoiceSession) {
+      liveVoiceSession.setCanBargeIn(true);
+    }
+    return;
+  }
+
+  if (state === "speaking") {
+    setLiveVoiceUiState("speaking", "Speaking…");
+    status.innerText = "Speaking";
+    status.className = "status";
+    hint.innerText = "Replying… speak anytime to interrupt.";
+    if (liveVoiceSession) {
+      liveVoiceSession.setCanBargeIn(true);
+    }
+  }
+}
+
+function handleLiveVadMisfire() {
+  if (!liveVoiceActive || !liveVoiceSession) {
+    return;
+  }
+
+  if (isAssistantSpeaking()) {
+    liveVoiceSession.setCanBargeIn(true);
+  }
+}
+
+async function processLiveUtterance(blob, meta = {}) {
+  if (!liveVoiceActive || !blob || !blob.size) {
+    return;
+  }
+
+  if (liveVoiceBusy && !meta.fromBargeIn) {
+    return;
+  }
+
+  liveVoiceBusy = true;
+  liveAssistantText = "";
+
+  abortInFlightRequests();
+  abortController = new AbortController();
+  const signal = abortController.signal;
+
+  stopActiveAudio();
+  await pauseSpotifyPlayback();
+  resetTtsPlayback();
+  activeHoldingBubble = null;
+  streamAssistantBubble = null;
+  streamBubbleIsHolding = false;
+
+  if (!app.classList.contains("logs-open")) {
+    app.classList.add("logs-open");
+    logsToggle.classList.add("active");
+  }
+
+  setComposerBusy(true);
+  if (liveVoiceSession) {
+    liveVoiceSession.setState("thinking");
+    liveVoiceSession.setCanBargeIn(true);
+  }
+  setLiveVoiceUiState("thinking", "Thinking…");
+  status.innerText = "Thinking";
+  status.className = "status";
+  hint.innerText = "Transcribing and answering…";
+
+  appendLogs([{
+    step: "voice.utterance",
+    status: "started",
+    message: "Live voice utterance captured",
+    timestamp: new Date().toISOString(),
+    details: {
+      durationMs: meta.durationMs || null,
+      format: meta.format || blob.type || "audio/wav",
+      vad: meta.vad || liveVoiceSession?.getCaptureMode() || "unknown"
+    }
+  }]);
+
+  try {
+    const chatId = await ensureActiveChat();
+    const profile = getStoredProfile();
+    const extension = (meta.format || blob.type || "").includes("webm") ? "webm" : "wav";
+
+    const form = new FormData();
+    form.append("audio", blob, `live-query.${extension}`);
+    form.append("chat_id", chatId);
+    form.append("user_id", getUserId());
+    form.append("profile", JSON.stringify(profile));
+
+    const data = await runStreamQuery(
+      "",
+      chatId,
+      profile,
+      signal,
+      {
+        voice: true,
+        formData: form,
+        onTranscript: text => {
+          if (looksLikeEchoTranscript(text)) {
+            appendLogs([{
+              step: "voice.echo-filter",
+              status: "completed",
+              message: `Ignored likely TTS echo: "${text}"`,
+              timestamp: new Date().toISOString(),
+              details: {}
+            }]);
+            abortInFlightRequests();
+            return;
+          }
+
+          addMessage("user", text);
+          setSpeechContext(text);
+          status.innerText = "Thinking";
+          hint.innerText = "Generating response...";
+        }
+      }
+    );
+
+    if (signal.aborted) {
+      return;
+    }
+
+    liveAssistantText = data.response || streamAssistantBubble?.innerText || "";
+
+    appendLogs([{
+      step: "session.complete",
+      status: "completed",
+      message: "Live voice turn finished",
+      timestamp: new Date().toISOString(),
+      details: { intent: data.intent }
+    }]);
+
+    loadChats();
+  } catch (error) {
+    if (error.name === "AbortError") {
+      if (liveVoiceActive && liveVoiceSession) {
+        liveVoiceSession.setState("listening");
+        liveVoiceSession.setCanBargeIn(isAssistantSpeaking());
+      }
+      return;
+    }
+
+    appendLogs([{
+      step: "session.error",
+      status: "error",
+      message: error.message || "Live voice turn failed.",
+      timestamp: new Date().toISOString(),
+      details: {}
+    }]);
+
+    if (streamAssistantBubble) {
+      streamAssistantBubble.innerText = "Something went wrong while processing the audio.";
+    } else if (liveVoiceActive) {
+      addMessage("assistant", "Something went wrong while processing the audio.");
+    }
+  } finally {
+    activeHoldingBubble = null;
+    streamAssistantBubble = null;
+    streamBubbleIsHolding = false;
+    liveVoiceBusy = false;
+    setComposerBusy(false);
+    abortController = null;
+
+    if (liveVoiceActive) {
+      if (!isAssistantSpeaking() && liveVoiceSession) {
+        liveVoiceSession.setState("listening");
+        setLiveVoiceUiState("listening", "Listening…");
+        status.innerText = "Listening";
+        status.className = "status recording";
+        hint.innerText = defaultIdleHint();
+      } else if (isAssistantSpeaking() && liveVoiceSession) {
+        liveVoiceSession.setState("speaking");
+        liveVoiceSession.setCanBargeIn(true);
+      }
+    } else if (!ttsInProgress) {
+      status.innerText = spotifyNowPlaying ? "Playing music" : "Ready";
+      hint.innerText = defaultIdleHint();
+    }
+  }
+}
+
+async function startLiveVoice() {
+  if (liveVoiceActive || meetingActive || typeof LiveVoiceSession !== "function") {
+    if (typeof LiveVoiceSession !== "function") {
+      throw new Error("Live voice script failed to load.");
+    }
+    return;
+  }
+
+  if (recorder && recorder.state === "recording") {
+    throw new Error("Stop the push-to-talk recording before starting Live.");
+  }
+
+  stopActiveAudio();
+  await stopSpotifyPlayback();
+  abortInFlightRequests();
+  resetTtsPlayback();
+
+  liveVoiceSession = new LiveVoiceSession({
+    processorUrl: "/static/voice/pcm-capture-processor.js",
+    onStateChange: state => handleLiveVoiceStateChange(state),
+    onLevel: rms => {
+      if (liveVoiceActive) {
+        applyLiveVoiceLevel(rms);
+      }
+    },
+    onBargeIn: meta => handleLiveBargeIn(meta || {}),
+    onVADMisfire: () => handleLiveVadMisfire(),
+    onUtterance: (blob, meta) => {
+      processLiveUtterance(blob, meta).catch(error => {
+        appendLogs([{
+          step: "voice.utterance",
+          status: "error",
+          message: error.message || "Could not process live utterance.",
+          timestamp: new Date().toISOString(),
+          details: {}
+        }]);
+      });
+    },
+    vad: {
+      engine: "silero",
+      positiveSpeechThreshold: 0.72,
+      negativeSpeechThreshold: 0.42,
+      minSpeechMs: 420,
+      redemptionMs: 650,
+      bargeInSpeechThreshold: 0.74,
+      bargeInDuringTtsThreshold: 0.9,
+      bargeInMinMsDuringTts: 450,
+      bargeInGraceMs: 550,
+      ttsEchoRmsMultiplier: 1.55,
+      postTtsHangoverMs: 1000,
+    }
+  });
+
+  await liveVoiceSession.start();
+  liveVoiceActive = true;
+  shell?.classList.add("live-active");
+  voiceOverlay.classList.add("active");
+  voiceOverlay.setAttribute("aria-hidden", "false");
+  liveStart.classList.add("active");
+  setComposerBusy(false);
+  setLiveVoiceUiState("listening", "Listening…");
+  status.innerText = "Listening";
+  status.className = "status recording";
+  hint.innerText = defaultIdleHint();
+
+  appendLogs([{
+    step: "voice.live.start",
+    status: "completed",
+    message: `Live voice started (${liveVoiceSession.getCaptureMode()})`,
+    timestamp: new Date().toISOString(),
+    details: {
+      engine: liveVoiceSession.getCaptureMode(),
+      noiseSuppression: true,
+      echoCancellation: true
+    }
+  }]);
+}
+
+async function stopLiveVoice() {
+  if (!liveVoiceActive && !liveVoiceSession) {
+    return;
+  }
+
+  abortInFlightRequests();
+  resetTtsPlayback();
+  stopActiveAudio();
+
+  const session = liveVoiceSession;
+  liveVoiceSession = null;
+  liveVoiceActive = false;
+  liveVoiceBusy = false;
+  liveAssistantText = "";
+
+  if (session) {
+    try {
+      await session.stop();
+    } catch (error) {
+      console.warn("Could not stop live voice session", error);
+    }
+  }
+
+  voiceOverlay.classList.remove("active");
+  voiceOverlay.setAttribute("aria-hidden", "true");
+  voiceOverlay.dataset.state = "idle";
+  shell?.classList.remove("live-active");
+  liveStart.classList.remove("active");
+  setComposerBusy(false);
+  status.innerText = "Ready";
+  status.className = "status";
+  hint.innerText = defaultIdleHint();
+
+  appendLogs([{
+    step: "voice.live.stop",
+    status: "completed",
+    message: "Live voice stopped",
+    timestamp: new Date().toISOString(),
+    details: {}
+  }]);
+}
+
 sendText.onclick = async () => {
   const transcript = textInput.value.trim();
-  if (!transcript || isProcessing) return;
+  if (!transcript || isProcessing || liveVoiceActive) return;
   textInput.value = "";
   primeSpotifyAutoplay();
   await processQuery(transcript);
@@ -2775,7 +3721,7 @@ textInput.addEventListener("keydown", async event => {
 });
 
 start.onclick = async () => {
-  if (meetingActive) {
+  if (meetingActive || liveVoiceActive) {
     return;
   }
 
@@ -2807,13 +3753,14 @@ start.onclick = async () => {
   stop.disabled = false;
   sendText.disabled = true;
   textInput.disabled = true;
+  liveStart.disabled = true;
   status.innerText = "Recording";
   status.className = "status recording";
   hint.innerText = "Listening... Spotify paused while recording.";
 };
 
 stop.onclick = async () => {
-  if (meetingActive) {
+  if (meetingActive || liveVoiceActive) {
     return;
   }
 
@@ -2927,7 +3874,7 @@ stop.onclick = async () => {
           status.innerText = "Playing music";
         } else {
           status.innerText = "Ready";
-          hint.innerText = "Type and press Send, or use Start / Stop for voice.";
+          hint.innerText = defaultIdleHint();
         }
       }
       abortController = null;
@@ -2937,6 +3884,9 @@ stop.onclick = async () => {
 
 meetingStart.onclick = async () => {
   try {
+    if (liveVoiceActive) {
+      await stopLiveVoice();
+    }
     await startMeetingSession();
   } catch (error) {
     appendLogs([{
@@ -2964,6 +3914,32 @@ meetingEnd.onclick = async () => {
     setMeetingUiActive(false);
     setComposerBusy(false);
   }
+};
+
+liveStart.onclick = async () => {
+  try {
+    if (liveVoiceActive) {
+      await stopLiveVoice();
+      return;
+    }
+    await startLiveVoice();
+  } catch (error) {
+    await stopLiveVoice();
+    appendLogs([{
+      step: "voice.live.start",
+      status: "error",
+      message: error.message || "Could not start live voice.",
+      timestamp: new Date().toISOString(),
+      details: {}
+    }]);
+    status.innerText = "Ready";
+    status.className = "status";
+    hint.innerText = error.message || "Could not start live voice.";
+  }
+};
+
+liveStop.onclick = async () => {
+  await stopLiveVoice();
 };
 
 loadProfile();

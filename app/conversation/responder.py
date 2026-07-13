@@ -8,12 +8,13 @@ from google.genai import types
 from app.conversation.language import detect_speech_locale
 from app.config import (
     GEMINI_API_KEY,
+    GEMINI_MODEL,
     GEMINI_TTS_MODEL,
     GEMINI_TTS_VOICE,
 )
 from app.utils.pipeline_log import pipeline_complete, pipeline_start
 
-MODEL = "gemini-2.5-flash"
+MODEL = GEMINI_MODEL
 TTS_MODEL = GEMINI_TTS_MODEL
 TTS_VOICE = GEMINI_TTS_VOICE
 
@@ -259,7 +260,14 @@ def generate_speech(
         ),
     )
 
-    inline_data = response.candidates[0].content.parts[0].inline_data
+    candidate = response.candidates[0] if response.candidates else None
+    content = candidate.content if candidate else None
+    parts = content.parts if content else None
+
+    if not parts or not parts[0].inline_data:
+        raise RuntimeError("Gemini TTS returned no audio content")
+
+    inline_data = parts[0].inline_data
     pcm_data = inline_data.data
 
     if isinstance(pcm_data, str):

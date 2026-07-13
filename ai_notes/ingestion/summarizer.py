@@ -7,10 +7,10 @@ from google.genai import types
 
 from ai_notes.models.schemas import ActionableItem, ExtractionResult, TaskStatus
 from ai_notes.prompts.meeting_notes import extraction_prompt
-from app.config import GEMINI_API_KEY
+from app.config import GEMINI_API_KEY, GEMINI_MODEL
 from app.utils.pipeline_log import pipeline_complete, pipeline_start
 
-MODEL = "gemini-2.5-flash"
+MODEL = GEMINI_MODEL
 _client = genai.Client(api_key=GEMINI_API_KEY)
 
 EXTRACTION_SCHEMA = types.Schema(

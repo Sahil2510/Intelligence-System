@@ -1,8 +1,10 @@
 import json
+import re
 from functools import lru_cache
 from pathlib import Path
 
 from app.context.prompt_builder import PromptBuilder
+from app.config import GEMINI_MODEL
 from app.conversation.responder import (
     classify_intent_with_llm,
     generate_response,
@@ -31,10 +33,37 @@ _WEB_HINTS = (
     "who is ",
     "current president",
     "current pm",
+    "president of usa",
+    "president of the usa",
+    "president of us",
+    "president of the us",
+    "president of america",
+    "president of the united states",
+    "prime minister of india",
+    "pm of india",
+    "chief minister",
+    "cm of",
+    "governor of",
+    "mayor of",
+    "ceo of",
+    "chairman of",
+    "current leader",
     "today's",
     "today ",
     "latest ",
     "live ",
+)
+
+_CURRENT_OFFICE_PATTERNS = (
+    re.compile(
+        r"\bwho\s+is\s+(the\s+)?(current\s+)?"
+        r"(president|prime\s+minister|pm|chief\s+minister|cm|governor|mayor)"
+        r"\s+of\b"
+    ),
+    re.compile(
+        r"\bwho\s+is\s+(the\s+)?(current\s+)?"
+        r"(ceo|chair(?:man|person)|head|leader)\s+of\b"
+    ),
 )
 
 _SPOTIFY_HINTS = (
@@ -145,6 +174,9 @@ def classify_intent_fast(transcript: str) -> str | None:
     if any(hint in cleaned for hint in _WEB_HINTS):
         return "web_search"
 
+    if any(pattern.search(cleaned) for pattern in _CURRENT_OFFICE_PATTERNS):
+        return "web_search"
+
     return None
 
 
@@ -177,7 +209,7 @@ def classify_intent(transcript: str) -> str:
         f"Intent classified as {llm_intent}",
         {
             "intent": llm_intent,
-            "method": "gemini-2.5-flash",
+            "method": GEMINI_MODEL,
         },
     )
     return llm_intent
@@ -237,7 +269,7 @@ def stream_tool_response(
         pipeline_start(
             "llm.web_search",
             "Streaming web-search response with Google Search grounding",
-            {"model": "gemini-2.5-flash"},
+            {"model": GEMINI_MODEL},
         )
         prompt, use_search = build_prompt_for_intent(
             intent,
@@ -277,7 +309,7 @@ def stream_tool_response(
         pipeline_start(
             "ai-notes.retrieval",
             "Streaming meeting notes retrieval response",
-            {"model": "gemini-2.5-flash"},
+            {"model": GEMINI_MODEL},
         )
         from app.config import DEFAULT_USER_ID
 
@@ -297,7 +329,7 @@ def stream_tool_response(
     pipeline_start(
         "llm.response",
         "Streaming response with Langfuse system prompt",
-        {"model": "gemini-2.5-flash"},
+        {"model": GEMINI_MODEL},
     )
     prompt, _ = build_prompt_for_intent(
         intent,
@@ -328,7 +360,7 @@ def execute_tool(
         pipeline_start(
             "llm.web_search",
             "Generating response with Langfuse web-search prompt and Google Search",
-            {"model": "gemini-2.5-flash"},
+            {"model": GEMINI_MODEL},
         )
         prompt = prompt_builder.build_web_search(
             transcript,
@@ -377,7 +409,7 @@ def execute_tool(
     pipeline_start(
         "llm.response",
         "Generating response with Langfuse system prompt",
-        {"model": "gemini-2.5-flash"},
+        {"model": GEMINI_MODEL},
     )
     prompt = prompt_builder.build(
         transcript,

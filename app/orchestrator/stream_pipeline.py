@@ -157,6 +157,7 @@ def stream_query(
         "type": "intent",
         "intent": intent,
         "needs_holding": should_show_holding(intent),
+        "google_search": intent == "web_search",
         "holding_response": (
             FAST_HOLDING_RESPONSE
             if should_show_holding(intent)

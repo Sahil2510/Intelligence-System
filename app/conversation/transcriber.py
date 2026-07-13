@@ -3,14 +3,14 @@ from pathlib import Path
 from google import genai
 from google.genai import types
 
-from app.config import GEMINI_API_KEY
+from app.config import GEMINI_API_KEY, GEMINI_MODEL
 from app.utils.pipeline_log import pipeline_complete, pipeline_start
 
 client = genai.Client(
     api_key=GEMINI_API_KEY
 )
 
-MODEL = "gemini-2.5-flash"
+MODEL = GEMINI_MODEL
 
 
 def transcribe_audio(audio_path: str):
